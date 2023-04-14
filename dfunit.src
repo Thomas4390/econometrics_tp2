@@ -1,0 +1,290 @@
+*
+* @DFUNIT  series  start  end
+* Computes one of the Dickey-Fuller unit root tests.
+*
+* Parameters:
+*   series     series to analyze
+*   start end  range of <<series>> to use (*not* range over which test is run)
+*              By default, the defined range of <<series>>
+*
+* Options:
+*   [TTEST]/NOTTEST
+*     Computes the regression t test, as opposed to the T(rho-1) test.
+*   DET=NONE/[CONSTANT]/TREND
+*     Choose what deterministic components to include.
+*   LAGS=number of additional lags [0]
+*     LAGS indicates the degree of AR polynomial on the differences
+*     to include in the unit root test on the residuals.  (Note - some
+*     software will count the number of lags in the expanded autoregression,
+*     which will be one more than the number of lags on the differences).
+*   MAXLAGS=maximum number of additional lags to consider [number of observations**.25]
+*   METHOD=[INPUT]/AIC/BIC/HQ/TTEST/GTOS
+*     Selects the method for deciding the number of additional lags. If
+*     INPUT, the number of lags given by the MAXLAGS (or LAGS) option is used. If
+*     AIC, the AIC-minimizing value between 0 and MAXLAGS is used; if BIC, it's
+*     the BIC-minimizing value, and if TTEST or GTOS, the number of lags for
+*     which the last included lag has a marginal significance level less than the
+*     cutoff given by the SIGNIF option.
+*   SIGNIF=cutoff significance level for METHOD=TTEST or GTOS[.10]
+*
+*   [PRINT]/NOPRINT
+*     NOPRINT suppresses the output
+*   TITLE=Title for output ["Dickey-Fuller Unit Root Test, Series xxxx"]
+*
+*   [INTERCEPT]/NOINTERCEPT
+*   TREND/[NOTREND]
+*     These are older alternatives to the DET option.
+*
+*   Defines:
+*    %NOBS   = number of regression observations + 1 (tables are based upon this)
+*    %RHO    = the lag coefficient (for y on lagged y form)
+*    %CDSTAT = test statistic
+*    %RESIDS = series of residuals
+*    %FSTAT  = joint F-statistic on unit root and zero on highest order deterministic.
+*    %%AUTOP = chosen lag length
+*
+*   Various other statistics (such as %DURBIN and %RSS) will be set to the values
+*   from the regression run.
+*
+* References:
+*   Fuller(1976), "Introduction to Statistical Time Series", New York, Wiley.
+*   Dickey and Fuller(1979), "Distribution of the Estimators for Time Series
+*   Regressions with a Unit Root", J.A.S.A., pp 427-431.
+*
+*   The (approximate) critical values for t-test form are from
+*   MacKinnon(1991), "Critical Values for Cointegration Tests", Long-Run Economic
+*   Relationships, R.F. Engle and C.W.J. Granger, eds, London, Oxford, pp 267-276
+*
+*   Revision Schedule:
+*    11/1989 Written by Tom Doan, Estima
+*    01/1992 Updated to version 4.0
+*    06/2000 Updated to version 5.0
+*    01/2003 INTERCEPT option added, output improved
+*    10/2003 PRINT/NOPRINT option added
+*    11/2006 DET option added as alternative to INTERCEPT and TREND
+*    03/2009 Change to use of REPORT
+*    01/2010 Make REPORT local
+*    05/2010 Add SPAN option to listing of deterministics
+*    07/2010 Add TITLE option
+*    10/2011 Options for selecting lag lengths added.
+*    06/2012 Add CLEAR S SDIFF to prevent carryover when running in
+*            a loop with series of different ranges.
+*
+procedure dfunit series start end
+type series    series
+type integer   start end
+*
+option choice  det   		2  none constant trend
+option switch  ttest 		1
+option switch  print 		1
+option string  title
+
+option integer lags
+option integer maxlags
+option choice  method    	1 input aic bic hq ttest gtos
+option real    signif      .10
+
+option switch  intercept 	1
+option switch  trend 		0
+*
+local integer  startl endl nobs tag
+local series   s sdiff strend
+local real     teststat fiddle
+local string   descript
+local vect     critvalues
+local integer  dettrend detconstant
+local string   ltitle
+local integer  maxlag znobs bestlag lag tag
+local real     ic icmin icmult
+local report   dfreport
+local vect[int] detlist
+declare integer %%autop
+*
+if .not.%defined(series) {
+   disp "Syntax: @dfunit(options)  SERIES start end"
+   return
+}
+
+inquire(series=series) startl<<start endl<<end
+*
+* Make a copy of the input series in case it gets overwritten (if, for
+* instance, series=%resids).
+*
+clear s sdiff
+set s      startl   endl = series
+set sdiff  startl+1 endl = s-s{1}
+set strend startl+1 endl = t
+
+if trend.or.det==3
+   compute dettrend=1
+else {
+   compute dettrend=0
+   if .not.intercept.or.det==1
+      compute detconstant=0
+   else
+      compute detconstant=1
+}
+
+if dettrend {
+   compute detlist=||constant,strend||
+   compute descript="With intercept and trend"
+}
+else if detconstant {
+   compute detlist=||constant||
+   compute descript="With intercept"
+}
+else {
+   dim detlist(0)
+   compute descript="Without intercept or trend"
+}
+
+compute znobs=endl-startl+1
+if %defined(lags)
+   compute maxlag=lags
+else
+if %defined(maxlags)
+   compute maxlag=maxlags
+else
+if method==1
+   compute maxlag=0
+else
+   compute maxlag=fix(znobs^.25)
+
+if method==1
+   compute bestlag=maxlag
+else {
+   cmom
+   # s{1} detlist sdiff{0 to maxlag}
+   if method==2
+      compute icmult=2.0/%nobs
+   else
+   if method==3
+      compute icmult=log(%nobs)/%nobs
+   else
+      compute icmult=2.0*log(log(%nobs))/%nobs
+   *
+   * Do the zero lag statistic and initialize the search procedure with
+   * <<bestlag>>=0.
+   *
+   linreg(cmom,noprint) sdiff
+   # s{1} detlist
+   compute ic=log(%rss/%nobs)+icmult*%nreg
+   compute icmin=ic,bestlag=0
+   *
+   * Walk backwards through the lags. The direction doesn't matter for
+   * the IC calculations, but does for GTOS.
+   *
+   do lag=maxlag,1,-1
+      linreg(cmom,noprint) sdiff
+      # s{1} detlist sdiff{1 to lag}
+      if method==5.or.method==6 {
+         if %ttest(%tstats(%nreg),%ndf)<=signif {
+            compute bestlag=lag
+            break
+         }
+      }
+      else {
+         compute ic=log(%rss/%nobs)+icmult*%nreg
+         if ic<icmin
+            compute icmin=ic,bestlag=lag
+      }
+   end do lag
+}
+*
+* Redo the regression with selected number of lags
+*
+if bestlag==0 {
+   linreg(noprint) sdiff
+   # s{1} detlist
+}
+else {
+   linreg(noprint) sdiff
+   # s{1} detlist sdiff{1 to bestlag}
+}
+*
+* Get the adjusted number of observations for the MacKinnon critical
+* values.
+*
+compute nobs=%nobs+1
+if dettrend {
+   if ttest
+      compute critvalues=||-3.9638-8.353/nobs-47.44/(nobs^2),-3.4126-4.039/nobs-17.83/(nobs^2),-3.1279-2.418/nobs-7.58/(nobs^2)||
+   else
+      compute critvalues=||-29.5,-21.8,-18.3||
+	exclude(noprint)
+   # s{1} strend
+   compute %fstat=%cdstat
+}
+else if detconstant {
+   if ttest
+      compute critvalues=||-3.4335-5.999/nobs-29.25/(nobs^2),-2.8621-2.738/nobs-8.36/(nobs^2),-2.5671-1.438/nobs-4.48/(nobs^2)||
+   else
+      compute critvalues=||-20.7,-14.1,-11.3||
+   exclude(noprint)
+   # s{1} constant
+   compute %fstat=%cdstat
+}
+else {
+   if ttest
+      compute critvalues=||-2.5658-1.960/nobs-10.04/(nobs^2),-1.9393-0.398/nobs,-1.6156-0.181/nobs||
+   else
+      compute critvalues=||-13.8,-8.1,-5.7||
+}
+*
+if ttest
+   compute teststat=%tstats(1)
+else {
+  if lags {
+     summarize(noprint)
+     # sdiff{1 to lags}
+     compute fiddle=1.0/(1.0-%sumlc)
+  }
+  else
+     compute fiddle=1.0
+  compute teststat=%nobs*fiddle*%beta(1)
+}
+compute %nobs=nobs,%cdstat=teststat,%rho=%beta(1)+1.0
+compute %%autop=bestlag
+
+if print==0
+   return
+
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="Dickey-Fuller Unit Root Test, Series "+%l(series)
+
+report(use=dfreport,action=define,title=ltitle)
+report(use=dfreport,atrow=1,atcol=1,span) ltitle
+report(use=dfreport,atrow=2,atcol=1,span) "Regression Run From "+%datelabel(%regstart())+" to "+%datelabel(%regend())
+report(use=dfreport,atrow=3,atcol=1) "Observations" %nobs
+report(use=dfreport,atrow=4,atcol=1,span) descript
+if method==1
+   report(use=dfreport,atrow=5,atcol=1,span) "Using fixed lags "+bestlag
+else
+   report(use=dfreport,atrow=5,atcol=1,span) "With "+bestlag+" lags chosen from "+maxlag
+report(use=dfreport,atrow=7,atcol=1) "Sig Level" "Crit Value"
+report(use=dfreport,atrow=8,atcol=1) "1%(**)"    critvalues(1)
+report(use=dfreport,atrow=9,atcol=1) "5%(*)"     critvalues(2)
+report(use=dfreport,atrow=10,atcol=1) "10%"      critvalues(3)
+if ttest {
+   report(use=dfreport,atrow=12,atcol=1) "T-Statistic" teststat
+   compute tag=fix(1+(teststat<critvalues(1))+(teststat<critvalues(2)))
+}
+else {
+   report(use=dfreport,atrow=12,atcol=1) "T(p-1)" teststat
+   compute tag=1
+}
+report(use=dfreport,action=format,atrow=12,atcol=2,special=tag)
+report(use=dfreport,action=format,atrow=8,atcol=2,width=8,align=decimal)
+report(use=dfreport,action=show)
+end
+
+
+
+
+
+
+
+
+
