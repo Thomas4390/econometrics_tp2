@@ -1,0 +1,60 @@
+*
+* HAMILTON.RPF
+* Estimation of Hamilton Markov switching model
+*
+* RATS User's Guide, Example from Section 11.7
+*
+cal(q) 1951:1
+open data gnpdata.prn
+data(format=prn,org=columns) 1951:1 1984:4
+*
+set g = 100*log(gnp/gnp{1})
+graph(header="GNP growth")
+# g
+*
+* Set up a mean-switching model with just the one variable and four lags.
+*
+@msvarsetup(lags=4,switch=m)
+# g
+compute gstart=1952:2,gend=1984:4
+frml msvarf = log(%MSVARProb(t))
+*
+nonlin(parmset=msparms) p
+nonlin(parmset=varparms) mu phi sigma
+@msvarinitial gstart gend
+*
+* Estimate the model by maximum likelihood.
+*
+maximize(parmset=varparms+msparms,$
+  start=(pstar=%MSVARInit()),$
+  reject=%MSVARInitTransition()==0.0,$
+  pmethod=simplex,piters=5,method=bfgs,iters=300) $
+   msvarf gstart gend
+*
+* Compute smoothed estimates of the regimes.
+*
+@msvarsmoothed gstart gend psmooth
+set pcontract gstart gend = psmooth(t)(1)
+*
+* To create the shading marking the recessions, create a dummy series
+* which is 1 when the recessq series is 1, and 0 otherwise. (recessq is
+* 1 for NBER recessions and -1 for expansions).
+*
+set contract = recessq==1
+*
+* Graph the data on the top and the probability of contraction (with the
+* recession shading) on the bottom.
+*
+spgraph(vfields=2)
+ graph(header="Quarterly Growth Rate of US GNP",shade=contract)
+ # g %regstart() %regend()
+ graph(style=polygon,shade=contract,$
+    header="Probability of Economy Being in Contraction")
+ # pcontract %regstart() %regend()
+spgraph(done)
+*
+* Compute predictive probability-weighted standardized residuals and
+* check for serial correlation.
+*
+@MSVARStdResiduals %regstart() %regend() stdu
+@regcorrs(title="MS Predictive Residuals",qstat) stdu(1)

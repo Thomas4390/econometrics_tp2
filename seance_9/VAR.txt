@@ -1,0 +1,153 @@
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(q) 1947:1
+open data QuarterlyVAR.xlsx
+data(format=xlsx,org=obs,sheet = "Quarterly Monetary VAR")
+
+compute begin   = 1954:4
+compute end     = 2019:4
+
+**DATES FOR IN-SAMPLE FORECAST
+compute begin_oosf     =  2001:01
+compute end_oosf       =  2019:4
+************************************************
+
+
+************************************************
+*****TRANSFORM VARIABLES************************
+************************************************
+set rgdpg  = log(rgdp) - log(rgdp{1})
+set pi     = log(cpi) - log(cpi{1})
+
+**If you want to remove a linear/quadratic trend: run OLS (example for rgdp)
+*set trend = t
+*set trendsq = t^2
+*set lrgdp   = log(rgdp)
+*linreg lrgdp begin end lrgdp_dt
+*# constant trend trendsq
+************************************************
+
+
+************************************************************
+*****CREATE VARIABLES STRINGS (TO MAKE THE CODE GENERAL)****
+************************************************************
+compute [vector[label]] varlist   = ||"rgdpg","pi","fedfunds"||
+compute [vector[label]] varlabels = ||"Real GDP Growth","Inflation","Fed Funds Rate"||
+compute nvar = %size(varlist)
+
+* CREATE STRING FOR REGRESSORS
+compute  reglist = %rlempty()
+do i=1,nvar
+   compute reglist = %rladdone(reglist,%s(varlist(i)))
+end do
+************************************************************
+
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+do i = 1,nvar
+   set xplot = %s(varlist(i))
+   graph(header=(varlabels(i)),key=lor) 1
+   # xplot begin end
+end do
+spgraph(done)
+************************************************************
+
+
+************************************************************
+*****SELECTING VAR LAG LENGTH*******************************
+************************************************************
+
+** For the routine @varlagselect, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1261
+** For the routine @mvqstat, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1316
+
+
+*1. INFORMATION CRITERIA: AIC
+@VARLagSelect(crit=aic,det=constant,lags=6) begin end
+# reglist
+
+
+*2. INFORMATION CRITERIA: BIC
+@VARLagSelect(crit=bic,det=constant,lags=6) begin end
+# reglist
+
+
+*3. LIKELIHOOD RATIO TEST
+@VARLagSelect(crit=gtos,det=constant,lags=6,signif=0.01) begin end
+# reglist
+
+
+*4. MULTIVARIATE LJUNG-BOX
+compute maxlag = 6
+do i=1,maxlag
+  compute lags = i
+  system(model=varmodel)
+  variables reglist
+  lags 1 to lags
+  det constant
+  end(system)
+  estimate(outsigma=sigmat,residuals=res,noprint) begin end
+
+  display 'Var with LAGS = ' i
+  @mvqstat(lags=12)
+  # res(1) res(2) res(3)
+  display '  '
+  *display 'test statistic                                       =' %CDSTAT
+  *DISPLAY 'significance level treating statistic as chi-squared =' %SIGNIF
+  *display 'degrees of freedom of the chi-squared                =' %NDFQ
+end do
+************************************************************
+
+
+************************************************************
+*****ESTIMATE VAR (BEST LAG) AND GRANGER-CAUSALITY TEST*****
+************************************************************
+compute lags = 5
+system(model=varmodel)
+variables reglist
+lags 1 to lags
+det constant
+end(system)
+estimate(outsigma=sigmat,residuals=res) begin end
+************************************************************
+
+
+************************************************************
+*****IN SAMPLE FORECAST (UPDATING ESTIMATES EACH PERIOD)****
+************************************************************
+compute noutsample     =  end_oosf-begin_oosf
+
+do i=0,noutsample
+  compute lags = lags
+  system(model=varmodel)
+  variables reglist
+  lags 1 to lags
+  det constant
+  end(system)
+  estimate(outsigma=sigmat,residuals=res,noprint) begin begin_oosf+i
+  FORECAST(MODEL=VARMODEL,FROM=begin_oosf+i,STEPS=1,RESULT=Y_OFORECAST,STDERRS=E_OFORECAST,NOPRINT)
+end do
+
+
+*DISPLAY 'OUT-SAMPLE FORECAST'
+*print /Y_OFORECAST
+
+*DISPLAY 'OUT-SAMPLE FORECAST STANDARD ERRORS'
+*print /E_OFORECAST
+
+compute [vector[label]] forecasts = ||"GDP Forecast","Inflation Forecast","Fed Funds Rate Forecast","M1 Forecast"||
+
+do i = 1,nvar
+   set xplot     = %s(varlist(i))
+   set xforecast = Y_OFORECAST(i)
+   graph(header=(forecasts(i)),key=lor) 2
+   # xplot begin_oosf end_oosf
+   # xforecast begin_oosf end_oosf
+end do
+spgraph(done)
+
+
+@UForeErrors rgdpg Y_OFORECAST(1) begin_oosf end_oosf
+@UForeErrors pi Y_OFORECAST(2) begin_oosf end_oosf

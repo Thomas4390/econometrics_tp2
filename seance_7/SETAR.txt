@@ -1,0 +1,196 @@
+********************
+*****LOAD DATA******
+********************
+cal(q) 1947:1
+open data dataset.xls
+data(format=excel,org=obs) 1947:1 2020:2
+
+compute begin   = 1954:2
+compute end     = 2019:4
+
+***********************************************************
+*****create new variables****
+***********************************************************
+
+set lrgdp  = log(gdp)
+set dlrgdp = log(gdp/gdp{1})
+
+
+***********************************************************
+*****PLOT**************************************************
+***********************************************************
+GRAPH(HEADER='Real GDP',KEY=UPLEFT) 1
+# lrgdp begin end
+
+***********************************************************
+set Y = dlrgdp
+***********************************************************
+
+***********************************************************
+*Choose range for autoregressive lag (p) and state variable (d)
+compute pmax        = 4
+
+*When using Information criteria, must use the same sample range for all models considered
+compute begin_pmax   = begin + pmax
+***********************************************************
+
+
+***********************************************************
+*Create labels (be consistent with pmax)
+compute base    = "dum"
+compute base_om = "om_dum"
+declare vector[labels] vl(pmax)
+input vl
+"_Y1" "_Y2" "_Y3" "_Y4" "_Y5" "_Y6"
+***********************************************************
+
+
+****************************************************************
+*****SETAR MODEL WITH UKNOWN THRESHOLD C AND DELAY D USING @TAR
+****************************************************************
+* documentation: https://estima.com/forum/viewtopic.php?f=7&t=2010
+* NOTE1: @TAR DOES NOT COMPUTE OPTIMAL P (I CODE THIS PART)
+* NOTE2: @TAR DOES NOT ALLOW P1 AND P2 TO DIFFER
+* NOTE3: @TAR USES QUANTILES TO DETERMINE R1=15% AND R2=85%
+* WHAT THE CODE DOES:
+   *1. FOR EACH p, USE @TAR TO FIND OPTIMAL c and d
+   *2. FOR EACH p, COMPUTE AIC USING OPTIMAL c and d
+   *3. CHOOSE p WITH THE SMALLEST AIC
+*@tar(p=6,R1=0.15,R2=0.85,noprint) Y begin end
+
+declare real    %%breakvalue
+declare integer %%delay
+
+dec rectangular results_TAR(pmax,4)
+
+do s=1,pmax
+
+   compute results_TAR(s,1)   = s
+
+   compute   reglist_dummy = %rlempty()
+   compute   reglist_om_dummy = %rlempty()
+
+   do j=1,s
+      compute reglist_dummy = %rladdone(reglist_dummy,%s(base+vl(j)))
+      compute reglist_om_dummy = %rladdone(reglist_om_dummy,%s(base_om+vl(j)))
+   end do j
+
+
+   @tar(p=s,R1=0.15,R2=0.85,noprint) Y begin_pmax end
+
+   compute results_TAR(s,4)   = %%DELAY
+   compute results_TAR(s,3)   = %%BREAKVALUE
+
+
+   set dum         = Y{%%DELAY} > %%BREAKVALUE
+   set om_dum      = 1-dum
+
+   do j=1,s
+      set %s(base+vl(j))       = dum*Y{j}
+      set %s(base_om+vl(j))    = om_dum*Y{j}
+   end do j
+
+   * RUN THE REGRESSION WITH OPTIMAL c AND d TO COMPUTE AIC
+   * REMARK: SINCE WE ARE COMPUTING AIC, USE ALWAYS SAME DATA, HENCE START WITH bgin + pmx
+   linreg(noprint) Y begin_pmax end
+   # dum om_dum reglist_dummy reglist_om_dummy
+   @REGCRITS(noprint)
+   compute results_TAR(s,2)   = %AIC
+ end do s
+
+dis 'COLUMN LABELS: p  // AIC // optimal c // d'
+dis results_TAR
+
+
+********************************************************************************
+*****SETAR MODEL WITH UKNOWN THRESHOLD C AND DELAY D (WITHOUT USING @tar)*******
+********************************************************************************
+*NOTE 1: RESULTS WILL NOT EXACTLY MATCH THE CODE ABOVE, SINCE THE 15% AND 85% CUT ARE IMPLEMENTED SLIGHLTY DIFFERENTLY
+*NOTE 2: THE FOLLOWING CODE CAN BE EXTENDED TO ALLOW FOR DIFFERENT LAGS ACROSS REGIMES (p1 and p2)
+
+*a. Sort observations in Y (from smallest to largest)
+compute Y_sort  = %sort(Y)
+
+*b. Drop first and last 15% of obs in dlrgdp_sort (alternatively you can use quintiles)
+ statistics(fractiles,noprint) Y
+
+ compute T = %NOBS
+
+ compute init_p = fix(0.15*T)
+ compute last_p = fix(0.85*T)
+ compute numc   = last_p - init_p
+
+*c. Create vector where to store AIC for each d (conditional on optimal p and c)
+
+
+dec rectangular results_SETAR(pmax,4)
+
+*Create vector in which AIC, C, and SSR are stored
+dec rectangular SSRM(numc,1)
+dec rectangular C(numc,1)
+dec rectangular AICV(numc,1)
+
+do p=1,pmax
+
+    compute   reglist_dummy    = %rlempty()
+    compute   reglist_om_dummy = %rlempty()
+
+    do j=1,p
+         compute reglist_dummy    = %rladdone(reglist_dummy,%s(base+vl(j)))
+         compute reglist_om_dummy = %rladdone(reglist_om_dummy,%s(base_om+vl(j)))
+     end do j
+
+    compute dmax = p
+
+    dec rectangular AIC_O(dmax,1)
+    dec rectangular SSRM_O(dmax,1)
+    dec rectangular C_O(dmax,1)
+    dec rectangular D_O(dmax,1)
+
+    do d=1,dmax
+
+      *Estimate for all possible c (given p and d)
+       do i=1,numc
+
+          compute c_temp  = Y_sort(init_p+i,1)
+
+          set dum         = Y{d} > c_temp
+          set om_dum      = 1-dum
+
+          do j=1,p
+             set %s(base+vl(j))       = dum*Y{j}
+             set %s(base_om+vl(j))    = om_dum*Y{j}
+          end do j
+
+
+         linreg(noprint) Y begin_pmax end
+         # dum om_dum reglist_dummy reglist_om_dummy
+         @REGCRITS(noprint)
+         compute C(i,1)      = c_temp
+         compute SSRM(i,1)   = %rss
+         compute AICV(i,1)   = %AIC
+      end do i
+
+      compute pos_min_SSRM = %minindex(SSRM)
+      compute pos_min_AIC  = %minindex(AICV)
+
+      compute C_O(d,1)      = C(pos_min_SSRM,1)
+      compute SSRM_O(d,1)   = SSRM(pos_min_SSRM,1)
+      compute AIC_O(d,1)    = AICV(pos_min_SSRM,1)
+      compute D_O(d,1)      = d
+
+   end do d
+
+
+   compute pos_min_AIC_O = %minindex(AIC_O)
+
+   compute results_SETAR(p,1) = p
+   compute results_SETAR(p,2) = AIC_O(pos_min_AIC_O,1)
+   compute results_SETAR(p,3) = C_O(pos_min_AIC_O,1)
+   compute results_SETAR(p,4) = D_O(pos_min_AIC_O,1)
+
+end do p
+
+
+dis 'COLUMN LABELS: p  // AIC // optimal c // d'
+dis results_SETAR

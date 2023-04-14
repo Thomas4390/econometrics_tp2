@@ -1,0 +1,156 @@
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(m) 1962:1
+open data Cointegration.xls
+data(format=xls,org=obs,sheet = "Data")
+
+compute begin   = 1962:1
+compute end     = 2019:4
+
+
+************************************************************
+*****CREATE VARIABLES STRINGS****
+************************************************************
+compute [vector[label]] varlist   = ||"tb1","tb5","tb10"||
+compute [vector[label]] varlabels = ||"TB1","TB5","TB10"||
+
+compute nvar = %size(varlist)
+
+* CREATE STRING FOR REGRESSORS
+compute  reglist = %rlempty()
+do i=1,nvar
+   compute reglist = %rladdone(reglist,%s(varlist(i)))
+end do
+************************************************************
+
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+spgraph(header="T-Bills",vfields=2,hfields=2)
+do i = 1,nvar
+   set xplot = %s(varlist(i))
+   graph(header=(varlabels(i))) 1
+   # xplot begin end
+end do
+spgraph(done)
+
+
+************************************************************
+*****TEST FOR UNIT ROOTS************************************
+************************************************************
+display 'ADF unit root tests: tb1, constant and trend, lags chosen by AIC: t-statistic'
+@dfunit(print,method=aic,maxlags=6,det=cons) tb1
+
+display 'ADF unit root tests: log CPI, constant and trend, lags chosen by AIC: t-statistic'
+@dfunit(print,method=aic,maxlags=6,det=cons) tb5
+
+display 'ADF unit root tests: log M1, constant and trend, lags chosen by AIC: t-statistic'
+@dfunit(print,method=aic,maxlags=6,det=cons) tb10
+
+
+*************************************************************************
+*****TEST FOR COINTEGRATION AND ESTIMATE VECM USING ENGEL AND GRANGER****
+*************************************************************************
+
+**ENGEL GRANGER TEST:
+@EGTEST(det=cons,method=aic,maxlags = 4) begin end
+# tb1 tb5 tb10
+
+**ENGEL GRANGER TEST, EXCLUDING CONSTANT
+@EGTEST(det=none,method=aic,maxlags = 4) begin end
+# tb1 tb5 tb10
+
+**ENGEL GRANGER TEST, INVERTING ORDER OF VARIABLES
+@EGTEST(det=constant,method=aic,maxlags = 4) begin end
+# tb10 tb1 tb5
+
+* This estimates the VECM using the built-in RATS instructions. This
+* creates a system of equations which can be analyzed further (for
+* forecasting, impulse responses or variance decompositions).
+
+
+@VARLagSelect(crit=hq,det=constant,lags=15) begin end
+# tb1 tb5 tb10
+@VARLagSelect(crit=bic,det=constant,lags=15) begin end
+# tb1 tb5 tb10
+
+*estimate cointegrating relationship (contant omitted since included in VECM below)
+linreg(define=cointeq) tb1
+# tb5 tb10
+
+system(model=vecm)
+variables tb1 tb5 tb10
+lags 7
+det constant
+ect cointeq
+end(system)
+estimate
+
+
+*************************************************************************
+*****TEST FOR COINTEGRATION AND ESTIMATE VECM ***************************
+*************************************************************************
+*This estimates an unrestricted VAR, then uses @JOHMLE to estimate one cointegrating vector and uses that to estimate a VECM.
+* Here I assume only gdp, cpi, and money are cointegrated (as an example)
+
+*SELECT NUMBER OF LAGS USING VAR IN LEVELS
+@varlagselect(lags=6,crit=aic)
+# tb1 tb5 tb10
+
+
+*SELECT NUMBER OF LAGS USING VAR IN LEVELS
+@varlagselect(lags=6,crit=bic)
+# tb1 tb5 tb10
+
+
+@JOHMLE(lags=7,det=rc,cv=beta)
+# tb1 tb5 tb10
+
+** if you want to normalize the cointegrating vector
+*compute beta_norm = beta/beta(1)
+*display beta_norm
+
+
+*SETUP EQUATION FOR THE COINTEGRATING VECTOR
+equation(coeffs=beta) cv *
+# tb1 tb5 tb10 constant
+
+* Setup and estimate the ERROR CORRECTION MODEL
+system(model=varmodel)
+var tb1 tb5 tb10 constant
+lags 1 to 7
+ect cv
+end(system)
+
+estimate
+
+compute fullmodel=%modelsubstect(varmodel)
+
+* FORECAST USING THE ECM MODEL
+forecast(steps=10,model=fullmodel,results=forecasts,stderrs=stderrs)
+*
+spgraph(hfields=2,footer="Forecasting plots of a fitted VECM")
+set upper (2004:8:6)+1 (2004:8:6)+10 = forecasts(1)+%invnormal(.975)*stderrs(1)
+set lower (2004:8:6)+1 (2004:8:6)+10 = forecasts(1)+%invnormal(.025)*stderrs(1)
+graph(header="3-Month-Bill") 4
+# tb3mo (2004:8:6)-49 *
+# forecasts(1)
+# upper / 3
+# lower / 3
+set upper (2004:8:6)+1 (2004:8:6)+10 = forecasts(2)+%invnormal(.975)*stderrs(2)
+set lower (2004:8:6)+1 (2004:8:6)+10 = forecasts(2)+%invnormal(.025)*stderrs(2)
+graph(header="(b) 6-Month-Bill") 4
+# tb6mo (2004:8:6)-49 *
+# forecasts(2)
+# upper / 3
+# lower / 3
+spgraph(done)
+
+
+
+
+*************************************************************************
+*************************JOHANSEN'S APPROACH*****************************
+*************************************************************************

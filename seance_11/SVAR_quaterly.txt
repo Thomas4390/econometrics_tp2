@@ -1,0 +1,149 @@
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(q) 1947:1
+open data QuarterlyData.xlsx
+data(format=xlsx,org=obs,sheet = "Quarterly Monetary VAR")
+
+compute begin   = 1954:4
+compute end     = 2019:4
+
+
+************************************************
+*****TRANSFORM VARIABLES************************
+************************************************
+
+set lrgdp     = log(rgdp)
+set lcpi      = log(cpi)
+set lg        = log(G_exp_nom) - log(gdp_def)
+set lg_inv    = log(G_exp_inv_nom) - log(gdp_def)
+set lg_def    = log(G_def_nom) - log(gdp_def)
+set ltax      = log(T_receipts_nom) - log(cpi)
+set lgdp_def  = log(gdp_def)
+
+set dlrgdp     = 100*(lrgdp - lrgdp{1})
+set dlcpi      = lcpi - lcpi{1}
+set dlg        = 100*(lg - lg{1})
+set dlg_inv    = 100*(lg_inv - lg_inv{1})
+set dlg_def    = 100*(lg_def - lg_def{1})
+set dltax      = 100*(ltax - ltax{1})
+
+set time       = t
+
+************************************************************
+*****CREATE VARIABLES STRINGS****
+************************************************************
+compute [vector[label]] varlist   = ||"dlg","dltax","dlrgdp","dlcpi","fedfunds"||
+*compute [vector[label]] varlist   = ||"dlg_inv","dltax","dlrgdp","dlcpi","fedfunds"||
+*compute [vector[label]] varlist   = ||"dlg_def","dltax","dlrgdp","dlcpi","fedfunds"||
+compute [vector[label]] varlabels = ||"Gov. Spenfing","Taxes","GDP","Inflation","Fed Funds"||
+
+compute nvar = %size(varlist)
+
+* CREATE STRING FOR REGRESSORS
+compute  reglist = %rlempty()
+do i=1,nvar
+   compute reglist = %rladdone(reglist,%s(varlist(i)))
+end do
+************************************************************
+
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+spgraph(header="Gov. Spending Shock",vfields=3,hfields=2)
+do i = 1,nvar
+   set xplot = %s(varlist(i))
+   graph(header=(varlabels(i))) 1
+   # xplot begin end
+end do
+spgraph(done)
+
+************************************************************
+*****SELECTING VAR LAG LENGTH*******************************
+************************************************************
+** For the routine @varlagselect, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1261
+** For the routine @mvqstat, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1316
+
+*1. INFORMATION CRITERIA: AIC
+@VARLagSelect(crit=aic,det=constant,lags=6) begin end
+# reglist
+
+
+*2. INFORMATION CRITERIA: BIC
+@VARLagSelect(crit=bic,det=constant,lags=6) begin end
+# reglist
+
+
+*3. LIKELIHOOD RATIO TEST
+@VARLagSelect(crit=gtos,det=constant,lags=6,signif=0.05) begin end
+# reglist
+
+
+*4. MULTIVARIATE LJUNG-BOX
+compute maxlag = 6
+do i=1,maxlag
+  compute lags = i
+  system(model=varmodel)
+  variables reglist
+  lags 1 to lags
+  det constant
+  end(system)
+  estimate(outsigma=sigmat,residuals=res,noprint) begin end
+
+  display 'Var with LAGS = ' i
+  @mvqstat(lags=12)
+  # res(1) res(2) res(3) res(4)
+  display '  '
+  *display 'test statistic                                       =' %CDSTAT
+  *DISPLAY 'significance level treating statistic as chi-squared =' %SIGNIF
+  *display 'degrees of freedom of the chi-squared                =' %NDFQ
+end do
+************************************************************
+
+
+************************************************************
+*****ESTIMATE VAR and IDENTIFY with RECURSIVE ORDERING*****
+************************************************************
+compute lags = 3
+system(model=varmodel)
+variables reglist
+lags 1 to lags
+det constant
+end(system)
+estimate(outsigma=sigmat,residuals=resids) begin end
+
+*RATS produces IRFs with recursive ordering
+compute nsteps = 10
+impulse(model=varmodel,CV=sigmat,steps=nsteps,results=baseirf,noprint)
+
+spgraph(header="Gov. Spending Shock",vfields=3,hfields=2)
+do i = 1,nvar
+   set xirf = baseirf(i,1)
+   graph(header=(varlabels(i)),nodates) 1
+   # xirf
+end do
+spgraph(done)
+
+
+errors(model=varmodel,steps=500,results = fedv)
+
+** BOOTSTRAP (CONDIFENCE BANDS)
+compute lowerb      = .16
+compute upperb      = .84
+compute fedv_horiz  = 10;
+source svar_boot.src
+source svar_boot.src
+
+spgraph(header="Gov. Spending Shock",vfields=3,hfields=2)
+do i = 1,nvar
+   set xirf = baseirf(i,1)
+   graph(header=(varlabels(i)),nodates) 3
+   # xirf
+   # KUPPER(i,1)
+   # KLOWER(i,1)
+end do
+spgraph(done)
+
+
+close data &fname

@@ -1,0 +1,80 @@
+********************
+*****LOAD DATA******
+********************
+cal(q) 1947:1
+open data dataset.xls
+data(format=excel,org=obs)
+
+compute begin   = 1954:2
+compute end     = 2020:1
+
+*****************************
+*****create new variables****
+*****************************
+
+set lrgdp  = log(gdp)
+set dlrgdp = lrgdp - lrgdp{1}
+
+
+************************
+*****PLOT VARIABLES*****
+************************
+
+GRAPH(HEADER='y',KEY=UPLEFT) 1
+    # lrgdp begin end
+
+GRAPH(HEADER='First Difference Log Real GDP',KEY=UPLEFT) 1
+    # dlrgdp begin end
+
+
+*************************
+*****UNIT ROOT TEST******
+*************************
+* SET MAXIMUM LAG OF DELTA_Y
+compute pstar = 1
+
+****CONSTANT AND TREND
+* Delta_Y(t) = constant + alpha*time + gamma*Y_(t-1) + Delta_Y{t-1} + eps
+set trend = t
+linreg dlrgdp begin end e_df
+# constant trend lrgdp{1} dlrgdp{1 to pstar}
+*CHECK WHETHER RESIDUALS ARE WHITE NOISE
+cor(number=12,partial=partial,qstats,span=4) e_df
+
+
+****CONSTANT; NO TREND
+* Delta_Y(t) = constant + gamma*Y_(t-1) + Delta_Y{t-1} + eps
+linreg dlrgdp begin end e_df
+# constant lrgdp{1} dlrgdp{1 to pstar}
+*CHECK WHETHER RESIDUALS ARE WHITE NOISE
+cor(number=12,partial=partial,qstats,span=4,result=x) e_df
+
+
+****NO CONSTANT; NO TREND
+* Delta_Y(t) = gamma*Y_(t-1)  + eta*Delta_Y{t-1} + eps
+* dlrgdp     = gamma*lrgdp{1} + eta*dlrgdp{1}    + eps
+linreg dlrgdp begin end e_df
+# lrgdp{1} dlrgdp{1 to pstar}
+*CHECK WHETHER RESIDUALS ARE WHITE NOISE
+cor(number=12,partial=partial,qstats,span=4) e_df
+
+
+
+
+****ALTERNATIVE: USE @dfunit
+****documentation for @dfunit at https://estima.com/forum/viewtopic.php?f=7&t=1257
+
+
+****CONSTANT AND TREND (CHOOSING LAGS WITH INFORMATION CRITERIA)
+display 'ADF unit root tests: log RGDP, constant and trend, lags chosen by BIC: t-statistic'
+@dfunit(print,maxlags=6,method=bic,det=trend) lrgdp begin end
+
+
+****CONSTANT; NO TREND (CHOOSING LAGS WITH INFORMATION CRITERIA)
+display 'ADF unit root tests: log-difference RGDP, constant, no trend, lags chosen by BIC: t-statistic'
+@dfunit(print,maxlags=6,method=bic,det=cons) lrgdp begin end
+
+
+*** NO CONSTANT AND TREND (CHOOSING LAGS WITH INFORMATION CRITERIA)
+display 'ADF unit root tests: log RGDP, no constant, no trend, lags chosen by BIC: t-statistic'
+@dfunit(print,maxlags=6,method=bic,det=none) lrgdp begin end

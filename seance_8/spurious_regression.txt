@@ -1,0 +1,25 @@
+open data spurious.xlsx
+data(format=xlsx,org=columns) 1 700 rw1 rw2
+*
+
+graph(key=attached) 2
+# rw1
+# rw2
+
+
+*Spurious Regression
+linreg rw1
+# constant rw2
+
+
+* Appropriate First-Difference Regression
+set drw1 = rw1 - rw1{1}
+set drw2 = rw2 - rw2{1}
+
+linreg drw1
+# constant drw2
+
+
+*Dynamic Regression
+linreg rw1
+# constant rw1{1} rw2 rw2{1}

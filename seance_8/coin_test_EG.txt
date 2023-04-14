@@ -1,0 +1,63 @@
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(m) 1962:1
+open data Cointegration.xls
+data(format=xls,org=obs,sheet = "Data")
+
+compute begin   = 1962:1
+compute end     = 2019:4
+
+
+************************************************************
+*****CREATE VARIABLES STRINGS****
+************************************************************
+compute [vector[label]] varlist   = ||"tb1","tb5","tb10"||
+compute [vector[label]] varlabels = ||"TB1","TB5","TB10"||
+
+compute nvar = %size(varlist)
+
+* CREATE STRING FOR REGRESSORS
+compute  reglist = %rlempty()
+do i=1,nvar
+   compute reglist = %rladdone(reglist,%s(varlist(i)))
+end do
+************************************************************
+
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+spgraph(header="T-Bills",vfields=2,hfields=2)
+do i = 1,nvar
+   set xplot = %s(varlist(i))
+   graph(header=(varlabels(i))) 1
+   # xplot begin end
+end do
+spgraph(done)
+
+
+************************************************************
+*****TEST FOR UNIT ROOTS************************************
+************************************************************
+display 'ADF unit root tests: tb1, constant and trend, lags chosen by AIC: t-statistic'
+@dfunit(print,method=aic,maxlags=12,det=cons) tb1
+
+display 'ADF unit root tests: log CPI, constant and trend, lags chosen by AIC: t-statistic'
+@dfunit(print,method=aic,maxlags=12,det=cons) tb5
+
+display 'ADF unit root tests: log M1, constant and trend, lags chosen by AIC: t-statistic'
+@dfunit(print,method=aic,maxlags=12,det=cons) tb10
+
+
+*************************************************************************
+*****TEST FOR COINTEGRATION AND ESTIMATE VECM USING ENGEL AND GRANGER****
+*************************************************************************
+
+**ENGEL GRANGER TEST:
+@EGTEST(det=constant,method=aic,maxlags = 4) begin end
+# tb1 tb5 tb10
+
+**ENGEL GRANGER TEST, INVERTING ORDER OF VARIABLES
+@EGTEST(det=constant,method=aic,maxlags = 4) begin end
+# tb10 tb1 tb5
