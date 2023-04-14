@@ -1,0 +1,207 @@
+*
+* @VARLagSelect( options )  start  end
+* # list of variables
+*
+* VARLagSelect chooses the lag length which minimizes one of the
+* information criteria.
+*
+* Options:
+*   DET=NONE/[CONSTANT] deterministic variables to include
+*
+*   LAGS=(maximum) number of lags [1]
+*   CRIT=AIC/SBC/BIC/HQ/GTOS/[NONE]
+*     Criterion to use in selecting the lag length (SBC and BIC are synonyms).
+*     GTOS does a general to specific pruning using LR tests. If NONE, it
+*     just estimates the model with the specified number of lags.
+*   SIGNIF=cutoff significance level for METHOD=GTOS[.05]
+*
+*   MODEL=model to define from chosen lag length [not used]
+*
+*   TITLE=title for output ["VAR Lag Selection"]
+*   [PRINT]/NOPRINT
+*
+* Variables Defined:
+*   %%AUTOP = chosen number of lags
+*
+* Revision Schedule:
+*   06/2005 Written by Tom Doan, Estima.
+*   03/2009 Add PRINT/NOPRINT option and define %%AUTOP
+*   10/2009 Add CRIT=GTOS option
+*   11/2012 Correct tag on CRIT=GTOS
+*   06/2013 Change label to "Chi-Squared Test" from "F-Test"
+*
+procedure VARLagSelect start end
+type integer start end
+*
+option integer lags 1
+option model   *model
+option choice  criterion 6 aic sbc bic hq gtos none
+option choice  det       2 none constant
+option real    signif    .05
+option switch  print     1
+option string  title
+*
+declare integer %%autop
+*
+local integer n i j l ntotal ndet
+local vect[int] list
+*
+local rect      cmomx cmombase
+local rect      pullcoeff modelcoeff
+local vect[int] reorder
+local real      lrbase penalty cvalue lastlogl lrcrit
+local vect[int] reglist
+local integer   bestlag headerrows
+local real      bestvalue
+local string    critlab
+local string    ltitle
+local report    vreport
+*
+* We need N(L+1)+1 variable/lag combinations, for lags 0 to L of the
+* endogenous variables, plus the intercept
+*
+enter(varying) list
+compute n=%rows(list)
+compute ntotal=n*(lags+1)
+*
+* Generate list of required variables. Start with the dependent variables
+*
+dim reglist(0)
+do i=1,n
+   compute reglist=%rladdone(reglist,list(i))
+end do i
+*
+* Now add any required lags. These are grouped by lags to make it easier
+* to use the sweep operator to do the regressions.
+*
+do j=1,lags
+   do i=1,n
+      compute reglist=%rladdlag(reglist,list(i),j)
+   end do i
+end do j
+*
+* Add in the deterministic components
+*
+if det==2 {
+   compute reglist=%rladdone(reglist,constant)
+   compute ndet=1
+}
+else
+   compute ndet=0
+compute ntotal=ntotal+ndet
+*
+* Compute the cross product matrix
+*
+cmom start end
+# reglist
+*
+* Scale it to a covariance matrix
+*
+compute cmomx=%cmom/%nobs
+*
+if criterion==6 {
+   compute cmomx=%sweeplist(cmomx,%seq(n+1,ntotal))
+   compute bestlag=lags
+}
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="VAR Lag Selection"
+
+if criterion<>6 {
+   if criterion==1
+      compute critlab="AICC"
+   else
+   if criterion==2.or.criterion==3
+      compute critlab="SBC/BIC"
+   else
+   if criterion==4
+      compute critlab="HQ"
+   else
+      compute critlab="Chi-Squared Test"
+
+   report(use=vreport,title=ltitle,action=define)
+   report(use=vreport,atrow=1,atcol=1,span) ltitle
+   report(use=vreport,atrow=2,atcol=1) "Lags" critlab
+   compute headerrows=2
+   *
+   * Sweep out deterministic variables. Save the resulting matrix so we
+   * can easily go back to the optimum number of lags.
+   *
+   if ndet>0
+      compute cmomx=%sweep(cmomx,ntotal)
+   compute cmombase=cmomx
+   compute lrbase  =-2.0*%logconcdensity(%xsubmat(cmomx,1,n,1,n),%nobs)
+   compute lastlogl=lrbase
+   compute %nregsystem=n*ndet
+   compute penalty=%if(criterion==1,%nregsystem*(2.0*n*%nobs/(n*%nobs-%nregsystem-1)),$
+                   %if(criterion<>4,%nregsystem*log(%nobs),$
+                                    %nregsystem*(2.0*log(log(%nobs)))))
+   compute cvalue=lrbase+penalty
+   if criterion==5
+      compute cvalue=0.0,lrcrit=%invchisqr(signif,n^2)
+   compute bestlag=0,bestvalue=cvalue
+   report(use=vreport,row=new,atcol=1) 0 cvalue
+   do l=1,lags
+      compute cmomx=%sweeplist(cmomx,%seq(n*l+1,n*(l+1)))
+      compute lrbase=-2.0*%logconcdensity(%xsubmat(cmomx,1,n,1,n),%nobs)
+
+      compute %nregsystem=l*n**2+n*ndet
+      compute penalty=%if(criterion==1,%nregsystem*(2.0*n*%nobs/(n*%nobs-%nregsystem-1)),$
+                      %if(criterion<>4,%nregsystem*log(%nobs),$
+                                       %nregsystem*(2.0*log(log(%nobs)))))
+      compute cvalue=lrbase+penalty
+      if criterion==5 {
+         compute cvalue=lastlogl-lrbase
+         if cvalue>lrcrit
+            compute bestlag=l
+      }
+      else
+      if cvalue<bestvalue
+         compute bestlag=l,bestvalue=cvalue
+      if print
+         report(use=vreport,row=new,atcol=1) l cvalue
+      compute lastlogl=lrbase
+   end do l
+   *
+   if criterion==5
+      report(use=vreport,action=format,atcol=2,atrow=bestlag+headerrows+1,special=onestar)
+   else
+      report(use=vreport,action=format,atcol=2,tag=minimum,special=onestar)
+   report(use=vreport,action=format,atcol=2,width=10,align=decimal)
+   if print
+      report(use=vreport,action=show)
+   compute %%autop=bestlag
+}
+if .not.%defined(model)
+   return
+*
+* Set up a VAR model in standard order
+*
+system(model=model)
+variables list
+if bestlag>0
+   lags 1 to bestlag
+if ndet>0
+   det constant
+end(system)
+*
+* The coefficients are in the first n columns, below the top nxn
+* corner (which has the covariance matrix of residuals).
+*
+compute pullcoeff=%xsubmat(cmomx,n+1,ntotal,1,n)
+*
+* However, the coefficients are grouped by lag, rather than by
+* variable. This reorders them.
+*
+dim reorder(bestlag*n+ndet) modelcoeff(bestlag*n+ndet,n)
+if bestlag>0
+   ewise reorder(i)=(%clock(i,bestlag)-1)*n+(i-1)/bestlag+1
+if ndet
+   compute reorder(bestlag*n+ndet)=n*lags+1
+ewise modelcoeff(i,j)=pullcoeff(reorder(i),j)
+compute %modelsetcoeffs(model,modelcoeff)
+compute %modelsetvcv(model,%xsubmat(cmomx,1,n,1,n))
+end
+
+

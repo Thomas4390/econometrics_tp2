@@ -79,4 +79,21 @@ display 'ADF unit root tests: PPPt, constant and trend, lags chosen by BIC: t-st
 @EGTEST(det=constant,method=aic,maxlags = 4) begin end
 # pt_C epsilon_t pt_US
 
+* Estimation de la régression
+linreg epsilon_t begin end e_xi
+# pt_US pt_C
+
+* Test de cointégration d'Engle-Granger
+@EGTEST(det=constant,method=aic,maxlags = 4) begin end
+# pt_US epsilon_t pt_C
+
+************************************************************
+*****SELECT NUMBER OF LAGS USING VAR IN LEVELS**************
+************************************************************
+@varlagselect(lags=6,crit=aic)
+# epsilon_t pt_US pt_C
+
+@varlagselect(lags=6,crit=bic)
+# epsilon_t pt_US pt_C
+
 

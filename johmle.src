@@ -1,0 +1,300 @@
+*
+* @JohMLE( options)  start end
+* # list of endogenous variables
+*
+* Computes Johansen lambda tests for cointegrating rank, and the ML
+* estimator for a single cointegrating vector or for the space of
+* cointegrating vectors.
+*
+* Options:
+* LAGS=#of lags in the VAR
+* DETERM=NONE/[CONSTANT]/TREND/RC/RTREND - deterministic variables in the VAR
+*   CONSTANT and TREND are in the model but not the CV.
+*   RC restricts a constant to the CV.
+*   RTREND restricts a linear trend to the CV.
+*
+* SEASONAL/[NOSEASONAL]
+*   SEASONAL includes seasonal dummies as deterministics
+* CV=ML estimator for a single cointegrating vector [not used]
+*
+* RANK=assumed rank of the cointegration space [number of variables]
+*   If you are using @JOHMLE to estimate the cointegrating space, you can
+*   use this to set the rank. This affects the dimensions of the VECTORS,
+*   DUALVECTORS and LOADINGS matrices.
+*
+* VECTORS=matrix of (column) eigenvectors
+* EIGENVALUES=VECTOR of eigenvalues
+* DUALVECTORS=matrix of eigenvectors of the dual problem
+* LOADINGS=matrix of loadings ("alpha") of the cointegration vectors.
+* TRACETESTS=vector of trace test statistics
+*
+* ECT=VECT[EQUATION] of equations describing the cointegrating vectors
+*
+* [PRINT]/NOPRINT
+* TITLE=title for report
+*
+* Variables Defined
+*   %NVAR  number of variables
+*   %NOBS  number of observations
+*   %SIGMA covariance matrix of residuals
+*
+* Revision Schedule:
+*  11/2003 Written by Tom Doan, Estima
+*  05/2005 Revised to add output, return the ML estimator for a
+*          single cointegrating vector.
+*  01/2006 Revised to improve output, add log likelihood to display, add
+*          VECTORS and DUALVECTORS options, have procedure set %SIGMA
+*  10/2006 Flip TRACE column so it decrements from low rank to high
+*  10/2006 Add eigenvalues option
+*  10/2006 Have procedure define %s11, %s00 and %s01 - the components
+*          of the covariance matrix with short run components swept out.
+*  04/2007 Add DETERM=RC option
+*  07/2007 Switch to use of generalized eigen decomposition. Add 95%-iles
+*          for trace statistic.
+*  03/2008 Add LOADINGS option to get the "alpha"
+*  03/2009 Add TRACETESTS option
+*  12/2009 Check for no variables to sweep (det=none,lags=1)
+*  06/2010 Add SEASONAL option
+*  09/2010 Add local report and title handling
+*  02/2011 Skip generation of seasonal dummies if SEASONAL isn't used (created
+*          spurious warning).
+*  10/2014 Add RANK and ECT options
+*
+procedure JohMLE start end
+type integer start end
+*
+option switch     print    1
+option integer    lags     1
+option choice     determ   2 none constant trend rc rtrend
+option switch     seasonal 0
+option vector     *cv
+option rect       *vectors
+option rect       *dualvectors
+option vector     *eigenvalues
+option rect       *loadings
+option vect       *tracetests
+option vect[equ]  *ect
+option string     title
+option integer    rank
+*
+declare symm      %%s00 %%s11
+declare rect      %%s01
+*
+local integer     numvar i startl endl sweepv
+local integer     nseason
+local vect[int]   v reglist ectxlist
+local vect[series] dv
+local series      trend
+local series      seasons
+local rect        s
+local symm        s10_00_01 s01_11_10
+local vect        eigval
+local rect        eigvec
+local vect        a1
+local vect[labels] vlabels
+local real        runlogl baselogl lambdamax
+local string      detdesc vs
+local string      ltitle
+local report      jreport
+*
+* ??? need lookup table for restricted trend
+*
+fixed rect trace95(5,12)
+  4.07 12.28 24.21 40.10 59.96  83.82 111.68 143.53 179.38 219.23 263.09 310.94
+  3.84 15.41 29.80 47.71 69.61  95.51 125.42 159.32 197.22 239.12 285.02 334.92
+  3.84 18.15 34.56 54.11 77.79 104.76 135.75 170.15 208.53 250.53 296.02 345.27
+  9.14 20.16 35.07 53.94 76.81 103.68 134.54 169.41 208.27 251.13 297.99 348.85
+  9.14 20.16 35.07 53.94 76.81 103.68 134.54 169.41 208.27 251.13 297.99 348.85
+*
+* Pull in list of endogenous variables
+*
+enter(varying) v
+compute numvar=%rows(v)
+*
+* Create differences of them
+*
+dim dv(numvar) vlabels(numvar+(determ==4.or.determ==5))
+do i=1,numvar
+   set dv(i) = v(i){0}-v(i){1}
+   compute vlabels(i)=%l(v(i))
+end do i
+*
+* In case they're needed, create the trend and centered seasonals
+*
+set trend = t
+if seasonal {
+   seasonal(centered) seasons
+   compute nseason=1:1-0:1
+}
+*
+* Generate list of required variables. Start with the current
+* differences and lagged levels.
+*
+dim reglist(0)
+dim ectxlist(0)
+*
+do i=1,numvar
+   compute reglist=%rladdone(reglist,dv(i))
+   compute ectxlist=%rladdone(ectxlist,v(i))
+end do i
+do i=1,numvar
+   compute reglist=%rladdlag(reglist,v(i),1)
+end do i
+*
+* Add the restricted constant and trend if required
+*
+compute sweepv=2*numvar
+if determ==4 {
+   compute reglist=%rladdone(reglist,constant),sweepv=sweepv+1,vlabels(numvar+1)="Constant"
+   compute ectxlist=%rladdone(ectxlist,constant)
+}
+if determ==5 {
+   compute reglist=%rladdone(reglist,trend),sweepv=sweepv+1,vlabels(numvar+1)="Trend"
+   compute ectxlist=%rladdone(ectxlist,trend)
+}
+*
+* Now add any required lags of the differences
+*
+if lags>1
+   do i=1,numvar
+      compute reglist=%rladdlaglist(reglist,dv(i),%seq(1,lags-1))
+   end do i
+*
+* Add in the deterministic components
+*
+if determ==2.or.determ==3.or.determ==5
+   compute reglist=%rladdone(reglist,constant)
+if determ==3
+   compute reglist=%rladdone(reglist,trend)
+if seasonal
+   compute reglist=%rladdlaglist(reglist,seasons,%seq(-(nseason-1),0))
+*
+* Compute the cross product matrix and scale it to a covariance matrix
+*
+inquire(reglist) startl<<start endl<<end
+# reglist
+cmom startl endl
+# reglist
+compute s=%cmom*(1.0/%nobs)
+*
+* Sweep out the additional lags and the deterministic components.
+*
+if sweepv<%ncmom
+   compute s=%sweeplist(s,%seq(sweepv+1,%ncmom))
+*
+compute %%s00=%xsubmat(s,       1,numvar,       1,numvar)
+compute %%s11=%xsubmat(s,numvar+1,sweepv,numvar+1,sweepv)
+compute %%s01=%xsubmat(s,       1,numvar,numvar+1,sweepv)
+*
+* Compute the generalized eigenvalues and vectors
+*
+compute s10_00_01=tr(%%s01)*inv(%%s00)*%%s01
+eigen(general=%%s11) s10_00_01 eigval eigvec
+if %defined(loadings)
+   compute loadings=%%s01*eigvec
+*
+* Compute the log likelihood of the model w/o cointegration, that is,
+* the VAR in first differences.
+*
+compute %logl=%logconcdensity(%%s00,%nobs)
+if determ==1
+   compute detdesc=" No Deterministics"
+else
+if determ==2
+   compute detdesc=" with Constant"
+else
+if determ==3
+   compute detdesc=" with Constant + Trend"
+else
+if determ==4
+   compute detdesc=" with Constant restricted to Cointegrating Vector"
+else
+   compute detdesc=" with Trend restricted to Cointegrating Vector"
+
+if seasonal
+   compute detdesc=detdesc+ "+ Seasonals"
+
+if %defined(tracetests)
+   dim tracetests(numvar)
+
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="Likelihood Based Analysis of Cointegration"
+
+report(use=jreport,action=define,title=ltitle)
+report(use=jreport,atrow=1,atcol=1,span) ltitle
+*
+* %logl is the log likelihood of a VAR with no cointegration. baselogl
+* starts as the log likelihood gap between the fully restricted and
+* fully unrestricted VAR's, then adjusts in the loop below to show the
+* LR trace statistics.
+*
+compute vs=""
+compute baselogl=0
+do i=1,numvar
+   compute vs=vs+" "+%l(v(i))
+   compute baselogl=baselogl-.5*%nobs*log(1-eigval(i))
+end do i
+report(use=jreport,atrow=2,atcol=1,span) "Variables: "+vs
+report(use=jreport,atrow=3,atcol=1,span) "Estimated from "+%datelabel(startl)+" to "+%datelabel(endl)
+report(use=jreport,atrow=4,atcol=1,span) "Data Points "+%nobs+" Lags "+lags+detdesc
+report(use=jreport,atrow=6,atcol=1,span) "Unrestricted eigenvalues and -T log(1-lambda)"
+report(use=jreport,atrow=7,atcol=1,align=center) "Rank" "EigVal" "Lambda-max" "Trace" "Trace-95%" "LogL"
+compute runlogl=%logl
+report(use=jreport,row=new,atcol=1) 0 "" "" "" "" runlogl
+do i=1,numvar
+   compute lambdamax=-%nobs*log(1-eigval(i))
+   compute runlogl=runlogl+.5*lambdamax
+   report(use=jreport,row=new,atcol=1) i eigval(i) lambdamax 2.0*baselogl trace95(determ,numvar+1-i) runlogl
+   if %defined(tracetests)
+      compute tracetests(i)=2.0*baselogl
+   compute baselogl=baselogl-.5*lambdamax
+end do i
+report(use=jreport,action=format,picture="*.####")
+*
+* Pull the first eigenvector
+*
+compute a1=%xcol(eigvec,1)
+*
+report(use=jreport,row=new)
+report(use=jreport,row=new,atcol=1,span) "Cointegrating Vector for Largest Eigenvalue"
+report(use=jreport,row=new,atcol=1) vlabels
+report(use=jreport,row=new,atcol=1) a1
+if print
+   report(use=jreport,action=show)
+*
+if %defined(cv)
+   compute cv=a1
+if %defined(vectors)
+   compute vectors=eigvec
+if %defined(eigenvalues)
+   compute eigenvalues=eigval
+*
+compute %sigma=%%s00
+if %defined(dualvectors) {
+   compute s01_11_10=%%s01*inv(%%s11)*tr(%%s01)
+   eigen(general=%%s00) s01_11_10 eigval dualvectors
+}
+*
+if %defined(rank) {
+   if %defined(vectors)
+      compute vectors=%xsubmat(eigvec,1,sweepv-numvar,1,rank)
+   if %defined(dualvectors)
+      compute dualvectors=%xsubmat(dualvectors,1,numvar,1,rank)
+   if %defined(loadings)
+      compute loadings=%xsubmat(loadings,1,numvar,1,rank)
+}
+*
+* Define ECT's
+*
+if %defined(ect) {
+   dim ect(rank)
+   do i=1,rank
+      equation(coeffs=%xsubmat(eigvec,1,sweepv-numvar,i,i)) $
+         ect(i) *
+      # ectxlist
+   end do i
+}
+*
+end
