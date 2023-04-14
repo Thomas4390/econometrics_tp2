@@ -96,4 +96,28 @@ linreg epsilon_t begin end e_xi
 @varlagselect(lags=6,crit=bic)
 # epsilon_t pt_US pt_C
 
+* Supposons que p* = 4 (remplacez 4 par la valeur déterminée par le critère AIC ou BIC)
+
+* Estimer la relation de cointégration (supposons que le modèle ait une constante et un vecteur de cointégration)
+@JOHMLE(lags=4, det=rc, cv=beta)
+# epsilon_t pt_US pt_C
+
+* Normaliser le vecteur de cointégration si nécessaire
+*compute beta_norm = beta/beta(1)
+*display beta_norm
+
+* Configurer l'équation pour le vecteur de cointégration
+equation(coeffs=beta) cv *
+# epsilon_t pt_US pt_C constant
+
+* Configurer et estimer le modèle de correction d'erreur (VECM) avec p* retards
+system(model=varmodel)
+var epsilon_t pt_US pt_C constant
+lags 1 to 4
+ect cv
+end(system)
+
+estimate
+
+
 
