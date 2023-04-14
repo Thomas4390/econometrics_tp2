@@ -120,4 +120,21 @@ end(system)
 estimate
 
 
+* Effectuer des tests de Wald sur les coefficients alpha pour chacune des équations
+test(wald)
+restrict alpha(1) = 0
+end(test)
+display "Wald test (alpha_epsilon): p-value = " %result(pvalue)
+
+test(wald)
+restrict alpha(2) = 0
+end(test)
+display "Wald test (alpha_C): p-value = " %result(pvalue)
+
+test(wald)
+restrict alpha(3) = 0
+end(test)
+display "Wald test (alpha_US): p-value = " %result(pvalue)
+
+
 
