@@ -1,0 +1,108 @@
+*
+*  @EGTEST( options ) start  end
+*  # list of endogenous variables
+*
+* Computes an Engle-Granger test for cointegration. This does the first
+* stage regression taking the first endogenous variable on the list as
+* the dependent variable. Use the related procedure @EGTESTRESIDS if you
+* already have the residuals.
+*
+*  Options:
+*   DET=NONE/[CONSTANT]/TREND
+*     Determines what deterministic components are included in the
+*     first cointegrating relation.
+*   LAGS=number of additional lags [0]
+*     LAGS indicates the degree of AR polynomial on the differences
+*     to include in the unit root test on the residuals.
+*   MAXLAGS=maximum number of additional lags to consider [number of observations**.25]
+*   METHOD=[INPUT]/AIC/BIC/HQ/TTEST/GTOS
+*     Selects the method for deciding the number of additional lags. If
+*     INPUT, the number of lags given by the MAXLAGS option is used. If AIC,
+*     the AIC-minimizing value between 0 and MAXLAGS is used; if BIC, it's
+*     the BIC-minimizing value, and if TTEST or GTOS, the number of lags for
+*     which the last included lag has a marginal significance level less than the
+*     cutoff given by the SIGNIF option.
+*   SIGNIF=cutoff significance level for METHOD=TTEST or GTOS[.10]
+*
+*   [PRINT]/NOPRINT
+*     NOPRINT suppresses the output
+*   TITLE=title for output ["Engle-Granger Test"]
+*
+*  Older options:
+*   TREND/NOTREND (deprecated in favor of DET option)
+*     Determines whether trend is included in the cointegrating relation.
+*
+*  Defines:
+*    %NOBS   = number of regression observations + 1 (tables are based upon this)
+*    %CDSTAT = test statistic
+*    %NVAR   = number of variables
+*    %%AUTOP = number of lags used
+*
+*  The (approximate) critical values for t-test form are from
+*    MacKinnon, "Critical Values for Cointegration Tests", Long-Run
+*      Economic Relationships, R.F. Engle and C.W.J. Granger, eds,
+*       London, Oxford, 1991, pp 267-276
+*
+*  Revision Schedule:
+*    07/2005 Written by Tom Doan, Estima.
+*    06/2007 DET option added
+*    06/2012 Use @EGTESTRESIDS for the final calculations/output
+*
+source egtestresids.src
+*
+procedure egtest start end
+type integer start end
+*
+option choice  det       2  none constant trend
+option integer lags      0
+option switch  print     1
+option integer maxlags
+option choice  method    1 input aic bic hq ttest gtos
+option real    signif    .10
+option string  title
+option switch  trend     0
+*
+local vect[int] datavec rhs dlist
+local integer m
+local series u du trnd
+local integer i startl endl
+local vect cv
+local integer table
+*
+* Pull in list of series. Set m to the number of variables - 1.
+* Copy positions 2 to m+1 into rhs.
+*
+enter(varying) datavec
+compute m=%rows(datavec)-1
+dim rhs(m)
+ewise rhs(i)=datavec(i+1)
+inquire(reglist) startl<<start endl<<end
+# datavec
+*
+if trend==1
+   compute table=3
+else
+   compute table=det
+*
+if table==3 {
+   set trnd startl endl = t
+   compute dlist=||constant,trnd||
+}
+else
+if table==2 {
+   compute dlist=||constant||
+}
+else
+   dim dlist(0)
+*
+linreg(print=print) datavec(1) startl endl u
+# rhs dlist
+*
+* Pass the residuals with all options on to @EGTESTRESIDS for
+* final calculations.
+*
+@egtestresids(nvar=m+1,det=table,print=print,title=title,$
+  method=method,signif=signif,maxlags=maxlags,lags=lags) u startl endl
+end
+
+
