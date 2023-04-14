@@ -1,1 +1,1 @@
-# Économétrie de séries temporelles, TP2
+# TP2 : Économétrie des séries temporelles
