@@ -1,1 +1,62 @@
-**
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(m) 1965:1
+open data H2q4.xls
+data(format=excel,org=obs) 1965:1 2007:1
+
+************************************************
+*****TRANSFORM VARIABLES************************
+************************************************
+set yt    = log(INDPRO)
+set pt    = log(CPIAUCSL)
+set pt_C  = log(PPIACO)
+set nbr_t = log(NONBORRES)
+set tr_t  = log(TOTRESNS)
+set mt    = log(M1SL)
+set ut    = UNRATE
+set rt    = FEDFUNDS
+
+
+************************************************************
+*****CREATE VARIABLES STRINGS****
+************************************************************
+compute [vector[label]] varlist   = ||"yt","ut","pt","pt_C","rt","nbr_t","tr_t","mt"||
+compute [vector[label]] varlabels = ||"Production industrielle","Taux de chômage","IPC","Indice des matières premières","Taux des fonds fédéraux","Réserves non empruntées","Réserves totales","Stock d'argent M1"||
+
+compute nvar = %size(varlist)
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+graph
+  type=line
+  series %s(varlist(1)) %s(varlist(2)) %s(varlist(3)) %s(varlist(4)) %s(varlist(5))
+  date 1965:1 2007:1
+  options alltitles title1="Variables en log (yt, pt, pt_C, nbr_t, tr_t, mt) et taux (ut, rt)" title2="1965:1 - 2007:1"
+  outfile=variables_graph.eps
+end(graph)
+
+************************************************************
+*****SELECTING VAR LAG LENGTH*******************************
+************************************************************
+compute lags = 12
+
+************************************************************
+*****ESTIMATE VAR and IDENTIFY with RECURSIVE ORDERING*****
+************************************************************
+system(model=varmodel)
+variables varlist
+lags 1 to lags
+det constant
+end(system)
+estimate(outsigma=sigmat,residuals=resids) begin end
+
+************************************************************
+*****DECOMPOSITION DE CHOLESKI*****************************
+************************************************************
+matrix chol_sigma = @chol(sigmat)
+matrix diag_inv = @diag(@inv(@diag(chol_sigma)))
+matrix A_inv = @transpose(diag_inv * chol_sigma)
+
+
