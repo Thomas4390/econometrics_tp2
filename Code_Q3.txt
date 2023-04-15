@@ -146,12 +146,12 @@ display "Wald test (alpha_US): p-value = " %result(pvalue)
 compute forecast_start = 2020:1
 compute forecast_end   = 2020:12
 
-* Préparez les séries pour stocker les prévisions
+* Préparation des séries pour stocker les prévisions
 series depst_forecast
 
-* Effectuez des prévisions pour chaque mois de 2020
+* On effectue les prévisions pour chaque mois de 2020
 do t = forecast_start, forecast_end
-    * Estimez le modèle VECM jusqu'à la période t-1
+    * On estime le modèle VECM jusqu'à la période t-1
     system(model=vecmodel)
     var epsilon_t pt_US pt_C constant
     lags 1 to 4
@@ -159,14 +159,14 @@ do t = forecast_start, forecast_end
     end(system)
     estimate t-1
 
-    * Prévoyez Δepsilon_t pour la période t en utilisant l'ensemble d'information I_t-1
+    * On prédit Δepsilon_t pour la période t en utilisant l'ensemble d'information I_t-1
     forecast(steps=1, model=vecmodel, results=forecasts)
 
-    * Stockez la prévision de Δepsilon_t dans la série depst_forecast
+    * On stocke la prévision de Δepsilon_t dans la série depst_forecast
     set depst_forecast(t) = forecasts(1)
 end do
 
-* Affichez les prévisions Δepsilon*_t pour 2020:M1 à 2020:M12
+* On affiche les prévisions Δepsilon*_t pour 2020:M1 à 2020:M12
 display "Previsions Δepsilon*_t (2020:M1 à 2020:M12) : "
 depst_forecast forecast_start forecast_end
 
