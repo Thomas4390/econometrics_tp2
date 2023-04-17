@@ -1,0 +1,174 @@
+
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(q) 1960:1
+open data H2q2.xls
+data(format=excel,org=obs) 1960:1 2019:4
+
+compute begin   = 1960:1
+compute end     = 2019:4
+
+***********************************************************
+**************CREATE NEW VARIABLES*************************
+***********************************************************
+
+TABLE
+
+compute dlog_Y_forecast = %rlempty()
+compute var_forecast_error = %rlempty()
+compute DLOG_Y_ACTUAL = %rlempty()
+set YT = GDPC1
+set CT = USAPFCEQDSNAQ
+set IT = GPDIC1
+set GT = GCEC1
+
+TABLE
+
+************************************************
+*****TRANSFORM VARIABLES************************
+************************************************
+set dlog_Yt = log(YT) - log(YT{1})
+set dlog_Ct = log(Ct) - log(Ct{1})
+set dlog_It = log(It) - log(It{1})
+set dlog_Gt = log(Gt) - log(Gt{1})
+
+TABLE
+
+************************************************************
+*****CREATE VARIABLES STRINGS (TO MAKE THE CODE GENERAL)****
+************************************************************
+compute [vector[label]] varlist   = ||"dlog_Yt","dlog_Ct","dlog_It","dlog_Gt"||
+compute [vector[label]] varlabels = ||"Real GDP Growth","Real Personal Consumption Expenditure Growth","Real Gross Private Domestic Investment Growth","Real Government Consumption Expenditure Growth"||
+compute nvar = %size(varlist)
+
+* CREATE STRING FOR REGRESSORS
+compute  reglist = %rlempty()
+do i=1,nvar
+   compute reglist = %rladdone(reglist,%s(varlist(i)))
+end do
+************************************************************
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+do i = 1,nvar
+   set xplot = %s(varlist(i))
+   graph(header=(varlabels(i)),key=lor) 1
+   # xplot begin end
+end do
+spgraph(done)
+************************************************************
+display reglist
+display varlist
+************************************************************
+*****SELECTING VAR LAG LENGTH*******************************
+************************************************************
+
+*1. INFORMATION CRITERIA: AIC
+@VARLagSelect(crit=aic,det=constant,lags=6) begin end
+# reglist
+
+*2. INFORMATION CRITERIA: BIC
+@VARLagSelect(crit=bic,det=constant,lags=6) begin end
+# reglist
+
+************************************************************
+*****GRANGER-CAUSALITY TEST*********************************
+************************************************************
+* Granger causality test: dlog_Gt causing dlog_Yt
+compute lags = 1
+linreg dlog_Yt
+# constant dlog_Yt{1 to lags} dlog_It{1 to lags} dlog_Ct{1 to lags} dlog_Gt{1 to lags}
+exclude(title="Granger Causality Test")
+# dlog_Gt{1 to lags}
+
+**I'm here
+************************************************
+*****PREPARE DATA FOR OUT-OF-SAMPLE FORECASTS***
+************************************************
+compute begin_oosf     =  2015:1
+compute end_oosf       =  2019:4
+compute noutsample     =  end_oosf - begin_oosf + 1
+
+************************************************
+*****OUT-OF-SAMPLE FORECASTS********************
+************************************************
+do i=0, noutsample-1
+  compute tau_minus_1 = begin_oosf + i - 1
+  compute tau = begin_oosf + i
+
+  * Estimate VAR model using data up to tau-1
+  system(model=varmodel)
+  variables reglist
+  lags 1 to lags
+  det constant
+  end(system)
+  estimate(outsigma=sigmat,residuals=res,noprint) begin tau_minus_1
+
+  * Forecast one step ahead (tau) using information up to tau-1
+  forecast(model=varmodel,from=tau,steps=1,result=Y_forecast,stderrs=E_forecast,noprint)
+
+  * Store the forecast and the forecast error variance                                    *THE STORING OF VARIABLES DOESN'T WORK
+  *copy Y_forecast(1) dlog_Y_forecast(i+1)
+  *copy E_forecast(1,1) var_forecast_error(i+1)
+
+  * Store the actual value of dlog_Y at tau
+   * copy dlog_Yt(tau) dlog_Y_actual(i+1)
+end do
+
+************************************************
+*****DISPLAY OUT-OF-SAMPLE FORECASTS************
+************************************************
+display "Out-of-sample forecasts:"
+print /dlog_Y_forecast
+
+display "Forecast error variances:"
+print /var_forecast_error
+
+declare series test
+set test
+************************************************
+*****PLOT FORECASTS VS ACTUAL VALUES************                           REVIEW THIS PART WHEN IT WORKS
+************************************************
+graph(header=("dlog_Yt Forecast vs Actual"), key=lor) 2
+# dlog_Y_forecast begin_oosf end_oosf
+# dlog_Y_actual begin_oosf end_oosf
+spgraph(done)
+
+************************************************
+*****CALCULATE MEAN SQUARED ERROR***************
+************************************************
+set mse = ((dlog_Y_actual - dlog_Y_forecast)^2)
+compute mse_avg = @mean(mse, begin_oosf, end_oosf)
+
+display "Mean Squared Error:"
+print mse_avg
+
+************************************************
+*****ESTIMATE ARIMA(1,1,0) MODEL***************
+************************************************
+set log_Yt = log(Yt)
+set begin_arima = 1960:1
+set end_arima = 2019:4
+
+* Estimate ARIMA(1,1,0) model
+BOXJENK(DIFFS=1,CONST,AR=1,DEFINE=ARIMA) LOG_YT 1960:01 2019:04 RESIDUALS_ARIMA
+
+************************************************
+*****FORECAST DELTA Y* FOR 2020:Q1**************
+************************************************
+compute begin_forecast_arima = 2020:1
+compute steps_forecast_arima = 1
+
+* Forecast one step ahead (2020:Q1) using information up to 2019:Q4
+forecast(model=ARIMA, from=begin_forecast_arima, steps=steps_forecast_arima, result=Y_forecast_arima, stderrs=E_forecast_arima, noprint)
+
+* Compute delta y*
+compute delta_y_star = Y_forecast_arima(1) - log_yt(2019:4)
+
+************************************************
+*****DISPLAY DELTA Y* FORECAST*****************
+************************************************
+display "Delta y* forecast for 2020:Q1:"
+display delta_y_star
