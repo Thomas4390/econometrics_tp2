@@ -146,7 +146,7 @@ display "Mean Squared Error:"
 print mse_avg
 
 ************************************************
-*****ESTIMATE ARIMA(1,1,0) MODEL***************
+*****ESTIMATE ARIMA(1,1,0) MODEL***************                               *UNDER THIS WORKS
 ************************************************
 set log_Yt = log(Yt)
 set begin_arima = 1960:1
