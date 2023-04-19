@@ -83,13 +83,17 @@ linreg dlog_Yt
 exclude(title="Granger Causality Test")
 # dlog_Gt{1 to lags}
 
-**I'm here
 ************************************************
 *****PREPARE DATA FOR OUT-OF-SAMPLE FORECASTS***
 ************************************************
 compute begin_oosf     =  2015:1
 compute end_oosf       =  2019:4
 compute noutsample     =  end_oosf - begin_oosf + 1
+
+* Initialize matrices to store forecasts, errors, and actual values
+matrix dlog_Y_forecast = @zeros(noutsample,1)
+matrix var_forecast_error = @zeros(noutsample,1)
+matrix dlog_Y_actual = @zeros(noutsample,1)
 
 ************************************************
 *****OUT-OF-SAMPLE FORECASTS********************
@@ -109,12 +113,12 @@ do i=0, noutsample-1
   * Forecast one step ahead (tau) using information up to tau-1
   forecast(model=varmodel,from=tau,steps=1,result=Y_forecast,stderrs=E_forecast,noprint)
 
-  * Store the forecast and the forecast error variance                                    *THE STORING OF VARIABLES DOESN'T WORK
-  *copy Y_forecast(1) dlog_Y_forecast(i+1)
-  *copy E_forecast(1,1) var_forecast_error(i+1)
+  * Store the forecast and the forecast error variance in the matrices
+  dlog_Y_forecast(i+1,1) = Y_forecast(1)
+  var_forecast_error(i+1,1) = E_forecast(1,1)
 
-  * Store the actual value of dlog_Y at tau
-   * copy dlog_Yt(tau) dlog_Y_actual(i+1)
+  * Store the actual value of dlog_Y at tau in the matrix
+  dlog_Y_actual(i+1,1) = dlog_Yt(tau)
 end do
 
 ************************************************
