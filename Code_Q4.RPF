@@ -1,0 +1,170 @@
+************************************************
+*****LOAD DATA AND CREATE DATA DATES************
+************************************************
+cal(m) 1948:1
+open data H2q4.xls
+data(format=xls,org=obs) 1948:1 2020:10
+
+compute begin   = 1965:1
+compute end     = 2007:1
+
+************************************************
+*****TRANSFORM VARIABLES************************
+************************************************
+
+set ut        = UNRATE
+set yt        = log(INDPRO)
+set rt        = FEDFUNDS
+set pct       = log(PPIACO)
+set pt        = log(CPIAUCSL)
+set nbrt      = log(NONBORRES)
+set trt       = log(TOTRESNS)
+set mt        = log(M1SL)
+
+
+************************************************************
+*****CREATE VARIABLES STRINGS****
+************************************************************
+compute [vector[label]] varlist   = ||"yt","ut","pt","pt_C","rt","nbr_t","tr_t","mt"||
+compute [vector[label]] varlabels = ||"Production industrielle","Taux de chômage","IPC","Indice des matières premières","Taux des fonds fédéraux","Réserves non empruntées","Réserves totales","Stock d'argent M1"||
+
+compute nvar = %size(varlist)
+
+************************************************************
+*****PLOT VARIABLES*****************************************
+************************************************************
+GRAPH(STYLE=LINE,HEADER="Variables en log (yt, pt, ptc, nbrt, trt, mt) et taux (ut, rt)",VLABEL="log value",HLABEL="1965:1 - 2007:1",KEY=UPLEFT) 5
+# UT
+# YT
+# RT
+# PCT
+# PT
+
+*TO SEE: NOT TOO SURE WHAT IS GOING ON HERE
+*graph
+*  type=line
+*  series %s(varlist(1)) %s(varlist(2)) %s(varlist(3)) %s(varlist(4)) %s(varlist(5))
+*  date 1965:1 2007:1
+*  options alltitles title1="Variables en log (yt, pt, pt_C, nbr_t, tr_t, mt) et taux (ut, rt)" title2="1965:1 - 2007:1"
+*  outfile=variables_graph.eps
+*end(graph)
+
+compute  reglist = %rlempty()
+do i=1,nvar
+   compute reglist = %rladdone(reglist,%s(varlist(i)))
+end do
+
+
+**I'M HERE
+************************************************************
+*****SELECTING VAR LAG LENGTH*******************************
+************************************************************
+** For the routine @varlagselect, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1261
+** For the routine @mvqstat, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1316
+
+*1. INFORMATION CRITERIA: AIC
+@VARLagSelect(crit=aic,det=constant,lags=6) begin end
+# yt ut pt pct rt nbrt trt mt
+
+
+*2. INFORMATION CRITERIA: BIC
+@VARLagSelect(crit=bic,det=constant,lags=6) begin end
+# yt ut pt pct rt nbrt trt mt
+
+
+*3. LIKELIHOOD RATIO TEST
+@VARLagSelect(crit=gtos,det=constant,lags=6,signif=0.05) begin end
+# yt ut pt pct rt nbrt trt mt
+
+
+*4. MULTIVARIATE LJUNG-BOX                                                                NOT FIXED
+compute maxlag = 12
+do i=1,maxlag
+  compute lags = 12
+  system(model=varmodel)
+  variables reglist
+  lags 1 to 12
+  det constant
+  end(system)
+  estimate
+
+  display 'Var with LAGS = ' i
+  @mvqstat(lags=12)
+  # res(1) res(2) res(3) res(4)
+  display '  '
+  *display 'test statistic                                       =' %CDSTAT
+  *DISPLAY 'significance level treating statistic as chi-squared =' %SIGNIF
+  *display 'degrees of freedom of the chi-squared                =' %NDFQ
+end do
+************************************************************
+
+
+************************************************************
+*****ESTIMATE VAR and IDENTIFY with RECURSIVE ORDERING*****
+************************************************************
+compute lags = 12
+system(model=varmodel)
+variables yt ut pt pct rt nbrt trt mt
+lags 1 to 12
+det constant
+end(system)
+estimate(outsigma=sigmat,residuals=resids_chol) begin end
+
+
+
+
+************************************************************
+*****ESTIMATE MATRIX A FROM CHOL DECOMPOSITION**************
+************************************************************
+declare rectangular chol_decomp
+declare vector mat_u
+
+compute chol_decomp = tr(%DECOMP(sigmat))
+compute mat_u = %diag(%XDIAG(chol_decomp))
+comput mat_u_inv = inv(mat_u)
+compute A = inv(tr(mat_u_inv * chol_decomp))
+
+medit chol_decomp
+medit mat_u
+medit mat_u_inv
+medit A
+
+
+
+
+*RATS produces IRFs with recursive ordering
+compute nsteps = 10
+impulse(model=varmodel,CV=sigmat,steps=nsteps,results=baseirf,noprint)
+
+spgraph(header="Gov. Spending Shock",vfields=3,hfields=2)
+do i = 1,nvar
+   set xirf = baseirf(i,1)
+   graph(header=(varlabels(i)),nodates) 1
+   # xirf
+end do
+spgraph(done)
+
+
+errors(model=varmodel,steps=500,results = fedv)
+
+** BOOTSTRAP (CONDIFENCE BANDS)
+compute lowerb      = .16
+compute upperb      = .84
+compute fedv_horiz  = 10;
+source svar_boot.src
+source svar_boot.src
+
+spgraph(header="Gov. Spending Shock",vfields=3,hfields=2)
+do i = 1,nvar
+   set xirf = baseirf(i,1)
+   graph(header=(varlabels(i)),nodates) 3
+   # xirf
+   # KUPPER(i,1)
+   # KLOWER(i,1)
+end do
+spgraph(done)
+
+
+close data &fname
+
+
