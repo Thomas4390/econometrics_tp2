@@ -1,4 +1,3 @@
-
 ************************************************
 *****LOAD DATA AND CREATE DATA DATES************
 ************************************************
@@ -6,8 +5,8 @@ cal(q) 1960:1
 open data H2q2.xls
 data(format=excel,org=obs) 1960:1 2019:4
 
-compute begin   = 1960:1
-compute end     = 2019:4
+compute begin  = 1960:1
+compute end    = 2019:4
 
 ***********************************************************
 **************CREATE NEW VARIABLES*************************
@@ -15,9 +14,7 @@ compute end     = 2019:4
 
 TABLE
 
-compute dlog_Y_forecast = %rlempty()
-compute var_forecast_error = %rlempty()
-compute DLOG_Y_ACTUAL = %rlempty()
+
 set YT = GDPC1
 set CT = USAPFCEQDSNAQ
 set IT = GPDIC1
@@ -43,9 +40,9 @@ compute [vector[label]] varlabels = ||"Real GDP Growth","Real Personal Consumpti
 compute nvar = %size(varlist)
 
 * CREATE STRING FOR REGRESSORS
-compute  reglist = %rlempty()
+compute reglist = %rlempty()
 do i=1,nvar
-   compute reglist = %rladdone(reglist,%s(varlist(i)))
+    compute reglist = %rladdone(reglist,%s(varlist(i)))
 end do
 ************************************************************
 
@@ -53,9 +50,9 @@ end do
 *****PLOT VARIABLES*****************************************
 ************************************************************
 do i = 1,nvar
-   set xplot = %s(varlist(i))
-   graph(header=(varlabels(i)),key=lor) 1
-   # xplot begin end
+    set xplot = %s(varlist(i))
+    graph(header=(varlabels(i)),key=lor) 1
+    # xplot begin end
 end do
 spgraph(done)
 ************************************************************
@@ -86,71 +83,60 @@ exclude(title="Granger Causality Test")
 ************************************************
 *****PREPARE DATA FOR OUT-OF-SAMPLE FORECASTS***
 ************************************************
-compute begin_oosf     =  2015:1
-compute end_oosf       =  2019:4
-compute noutsample     =  end_oosf - begin_oosf + 1
+compute begin_oosf = 2015:1
+compute end_oosf   = 2019:4
+compute noutsample = end_oosf - begin_oosf
 
-* Initialize matrices to store forecasts, errors, and actual values
-matrix dlog_Y_forecast = @zeros(noutsample,1)
-matrix var_forecast_error = @zeros(noutsample,1)
-matrix dlog_Y_actual = @zeros(noutsample,1)
 
 ************************************************
 *****OUT-OF-SAMPLE FORECASTS********************
 ************************************************
-do i=0, noutsample-1
-  compute tau_minus_1 = begin_oosf + i - 1
-  compute tau = begin_oosf + i
+do i=0, noutsample
+     * Estimate VAR model using data up to tau-1
+     system(model=varmodel)
+     variables reglist
+     lags 1 to lags
+     det constant
+     end(system)
+     estimate(outsigma=sigmat,residuals=res,noprint) begin begin_oosf+i
 
-  * Estimate VAR model using data up to tau-1
-  system(model=varmodel)
-  variables reglist
-  lags 1 to lags
-  det constant
-  end(system)
-  estimate(outsigma=sigmat,residuals=res,noprint) begin tau_minus_1
-
-  * Forecast one step ahead (tau) using information up to tau-1
-  forecast(model=varmodel,from=tau,steps=1,result=Y_forecast,stderrs=E_forecast,noprint)
-
-  * Store the forecast and the forecast error variance in the matrices
-  dlog_Y_forecast(i+1,1) = Y_forecast(1)
-  var_forecast_error(i+1,1) = E_forecast(1,1)
-
-  * Store the actual value of dlog_Y at tau in the matrix
-  dlog_Y_actual(i+1,1) = dlog_Yt(tau)
+     * Forecast one step ahead
+     forecast(model=varmodel,from=begin_oosf+i,steps=1,result=Y_forecast,stderrs=E_forecast,noprint)
 end do
+
 
 ************************************************
 *****DISPLAY OUT-OF-SAMPLE FORECASTS************
 ************************************************
 display "Out-of-sample forecasts:"
-print /dlog_Y_forecast
+print /Y_forecast
 
 display "Forecast error variances:"
-print /var_forecast_error
+print /E_forecast
 
-declare series test
-set test
+compute [vector[label]] forecasts = ||"PIB Forecast","Dépenses conso Forecast","Investissement Forecast","Dépenses publiques Forecast"||
+
+
 ************************************************
-*****PLOT FORECASTS VS ACTUAL VALUES************                           REVIEW THIS PART WHEN IT WORKS
+*****PLOT FORECASTS VS ACTUAL VALUES************
 ************************************************
-graph(header=("dlog_Yt Forecast vs Actual"), key=lor) 2
-# dlog_Y_forecast begin_oosf end_oosf
-# dlog_Y_actual begin_oosf end_oosf
+
+set xplot     = %s(varlist(1))
+set xforecast = Y_forecast(1)
+graph(header=(forecasts(1)),key=lor) 2
+# xplot begin_oosf end_oosf
+# xforecast begin_oosf end_oosf
 spgraph(done)
+
 
 ************************************************
 *****CALCULATE MEAN SQUARED ERROR***************
 ************************************************
-set mse = ((dlog_Y_actual - dlog_Y_forecast)^2)
-compute mse_avg = @mean(mse, begin_oosf, end_oosf)
-
-display "Mean Squared Error:"
-print mse_avg
+source uforeerrors.src
+@uforeerrors dlog_Yt Y_forecast(1) begin_oosf end_oosf
 
 ************************************************
-*****ESTIMATE ARIMA(1,1,0) MODEL***************                               *UNDER THIS WORKS
+*****ESTIMATE ARIMA(1,1,0) MODEL***************
 ************************************************
 set log_Yt = log(Yt)
 set begin_arima = 1960:1
@@ -176,3 +162,4 @@ compute delta_y_star = Y_forecast_arima(1) - log_yt(2019:4)
 ************************************************
 display "Delta y* forecast for 2020:Q1:"
 display delta_y_star
+

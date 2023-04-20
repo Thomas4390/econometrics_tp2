@@ -115,7 +115,7 @@ estimate(outsigma=sigmat,residuals=res) begin end
 
 
 ************************************************************
-*****IN SAMPLE FORECAST (UPDATING ESTIMATES EACH PERIOD)****
+*****OUT OF SAMPLE FORECAST (UPDATING ESTIMATES EACH PERIOD)****
 ************************************************************
 compute noutsample     =  end_oosf-begin_oosf
 

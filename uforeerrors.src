@@ -1,0 +1,128 @@
+*
+* @UForeErrors( options )  actual  forecast   start   end
+*
+* @UForeErrors computes error statistics on a series of in-sample one-step
+* forecasts.
+*
+* Parameters:
+*   actual     series of actual values
+*   forecast   series of forecasts
+*   start end  range of forecasts to analyze (by default, the
+*              range of the series forecast)
+*
+* Options:
+*   [print]/noprint
+*   title=descriptive title for forecasts
+*   theildecomp/[notheildecomp]
+*   window=title for report window [not used - output goes to output file]
+*
+* Variables Defined:
+*   %%FERRMEAN   mean forecast error
+*   %%FERRMAE    mean absolute error
+*   %%FERRMSE    root mean square error
+*   %%FERRMPE    mean percentage error
+*   %%FERRMAPE   mean absolute percentage error
+*   %%FERRMSPE   root mean square percentage error
+*
+*   The last three are defined only if the actual series is
+*   positive throughout the range.
+*
+* Revision Schedule
+*   02/2003 Written by Estima
+*   10/2003 Added TITLE option
+*   01/2005 Rewrite for version 6. Add option for Theil decomposition.
+*   06/2005 Add MSE and Theil's U
+*   02/2007 Change to not use REPORT when NOPRINT is used
+*   07/2010 Use LOCAL REPORT
+*
+procedure UForeErrors actual forecast start end
+type series actual forecast
+type integer start end
+*
+option switch 	print 1
+option string 	title
+option switch 	theildecomp 0
+option string 	window
+*
+local integer 	startl endl
+local series 	ferrors
+local rect 		sw
+local real 		meansqr msqract msqrfore nochange relchange nonpos
+local real 		theili theilm theils theilc
+local integer 	doreport
+local report	ureport
+local string	ltitle
+*
+if .not.%defined(actual).or..not.%defined(forecast) {
+   disp "Syntax: @UForeErrors actual forecast start end"
+   return
+}
+*
+* If a range isn't provided, take the intersection between the ranges of
+* the actual and forecast series
+*
+inquire(reglist) startl<<start endl<<end
+# actual forecast
+*
+set ferrors startl endl = actual-forecast
+*
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="Forecast Analysis for "+%l(actual)
+
+compute doreport=print.or.%defined(window)
+report(use=ureport,action=define,title=ltitle)
+report(use=ureport,atrow=1,atcol=1,span) ltitle
+report(use=ureport,row=new,atcol=1,span) "From "+%datelabel(startl)+" to "+%datelabel(endl)
+
+sstats(mean) startl endl ferrors>>%%ferrmean abs(ferrors)>>%%ferrmae $
+   ferrors^2>>meansqr (actual-actual{1})^2>>nochange actual^2>>msqract $
+    forecast^2>>msqrfore (actual<=0)>>nonpos
+compute %%ferrmse =sqrt(meansqr)
+compute theili=sqrt(meansqr)/(sqrt(msqract)+sqrt(msqrfore))
+compute theilm=%%ferrmean^2/meansqr
+cmom startl endl
+# actual forecast constant
+compute %cmom=(%cmom/%nobs)/meansqr
+compute sw=%sweep(%cmom,3)
+compute theils=sw(1,1)+sw(2,2)-2*sqrt(sw(1,1)*sw(2,2))
+compute theilc=2.0*(sqrt(sw(1,1)*sw(2,2))-sw(1,2))
+
+report(use=ureport,row=new,atcol=1) "Mean Error" %%ferrmean
+report(use=ureport,row=new,atcol=1) "Mean Absolute Error" %%ferrmae
+report(use=ureport,row=new,atcol=1) "Root Mean Square Error" %%ferrmse
+report(use=ureport,action=format,atcol=2,width=10)
+report(use=ureport,row=new,atcol=1) "Mean Square Error" meansqr
+if %valid(nochange)
+   report(use=ureport,row=new,atcol=1) "Theil's U" sqrt(meansqr/nochange)
+
+if nonpos==0 {
+   set ferrors startl endl = ferrors/actual
+   sstats(mean) startl endl ferrors>>%%ferrmpe abs(ferrors)>>%%ferrmape ferrors^2>>%%ferrmspe $
+      (actual/actual{1}-1)^2>>nochange ((forecast-actual)/actual{1})^2>>relchange
+   compute %%ferrmspe=sqrt(%%ferrmspe)
+   report(use=ureport,row=new)
+   report(use=ureport,row=new,atcol=1) "Mean Pct Error" %%ferrmpe
+   report(use=ureport,row=new,atcol=1) "Mean Abs Pct Error" %%ferrmape
+   report(use=ureport,row=new,atcol=1) "Root Mean Square Pct Error" %%ferrmspe
+   if %valid(nochange)
+      report(use=ureport,row=new,atcol=1) "Theil's Relative U" sqrt(relchange/nochange)
+}
+else {
+   compute %%ferrmpe=%%ferrmape=%%ferrmspe=%na
+}
+
+if theildecomp.and.doreport {
+   report(use=ureport,row=new)
+   report(use=ureport,row=new,atcol=1) "Theil Inequality Measure" theili
+   report(use=ureport,row=new,atcol=1) "  Bias" theilm
+   report(use=ureport,row=new,atcol=1) "  Variance" theils
+   report(use=ureport,row=new,atcol=1) "  Covariance" theilc
+}
+
+if doreport
+   report(use=ureport,action=show,window=window)
+
+end UForeErrors
+
