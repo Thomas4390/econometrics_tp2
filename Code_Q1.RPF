@@ -42,18 +42,9 @@ input vl
 
 
 ****************************************************************
-*****SETAR MODEL WITH KNOWN THRESHOLD C AND DELAY D USING @TAR
+*****SETAR MODEL; p = 1,...,12; c = 6%; d = 1 USING @TAR********
 ****************************************************************
 * documentation: https://estima.com/forum/viewtopic.php?f=7&t=2010
-* NOTE1: @TAR DOES NOT COMPUTE OPTIMAL P (I CODE THIS PART)
-* NOTE2: @TAR DOES NOT ALLOW P1 AND P2 TO DIFFER
-* NOTE3: @TAR USES QUANTILES TO DETERMINE R1=15% AND R2=85%
-* WHAT THE CODE DOES:
-   *1. FOR EACH p, USE @TAR TO FIND OPTIMAL c and d
-   *2. FOR EACH p, COMPUTE AIC USING OPTIMAL c and d
-   *3. CHOOSE p WITH THE SMALLEST AIC
-*@tar(p=6,R1=0.15,R2=0.85,noprint) ut begin end
-
 
 compute c = 6
 compute d = 1
@@ -97,19 +88,10 @@ dis results
 
 
 ****************************************************************
-*****SETAR MODEL WITH UNKNOWN THRESHOLD C AND DELAY D USING @TAR
+*SETAR MODEL; p = 1,...,12; d = 1,...,12; UNKNOWN c; USING @TAR*
 ****************************************************************
 * documentation: https://estima.com/forum/viewtopic.php?f=7&t=2010
-* NOTE1: @TAR DOES NOT COMPUTE OPTIMAL P (I CODE THIS PART)
-* NOTE2: @TAR DOES NOT ALLOW P1 AND P2 TO DIFFER
-* NOTE3: @TAR USES QUANTILES TO DETERMINE R1=15% AND R2=85%
-* NOTE4: @TAR IMPOSES THE RESTRICTION D<=P
-* WHAT THE CODE DOES:
-   *1. FOR EACH p, USE @TAR TO FIND OPTIMAL c and d
-   *2. FOR EACH p, COMPUTE AIC USING OPTIMAL c and d
-   *3. CHOOSE p WITH THE SMALLEST AIC
-*@tar(p=12,R1=0.15,R2=0.85,noprint) ut begin end
-
+* @TAR imposes by default d <= p
 
 declare real    %%breakvalue
 declare integer %%delay
@@ -154,7 +136,7 @@ dis results_2
 
 
 ****************************************************************
-*****AR(p) model
+*****AR(p) model************************************************
 ****************************************************************
 
 compute p = 12
