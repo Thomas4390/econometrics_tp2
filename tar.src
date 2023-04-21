@@ -1,0 +1,220 @@
+*
+* @TAR( options ) y  start end
+*
+* Estimates a self-exciting threshold autoregression, and computes
+* asymptotic p-values for tests for the threshold effect. From Bruce
+* Hansen, "Inference When a Nuisance Parameter is Not Identified Under
+* the Null Hypothesis", Econometrica 1996, vol 64, no. 2, pp 413-430.
+*
+* The regression includes a constant and some set of lags of the
+* dependent variable. These can either be consecutive lags (use P
+* option), or a list with skips in it (use LAGLIST option).
+*
+* Options:
+*   P=number of lags [12]
+*   LAGLIST=||list of lags to use||
+*   R1=starting quantile of data to use as possible thresholds [.15]
+*   R2=ending quantile of data to use as possible thresholds [.85]
+*   NREPS=number of repetitions for computing approximate p-values [0]
+*   ROBUST/[NOROBUST] use heteroscedasticity consistent estimates for
+*     standard errors.
+*
+*   [PRINT]/NOPRINT
+*   TITLE=title for report ["Threshold Autoregression"]
+*
+* Revision Schedule:
+*  06/2005 Written by Tom Doan, Estima
+*  05/2006 Revised to add ROBUST option
+*  08/2010 Add TITLE option, switch to use of local REPORT.
+*
+procedure TAR y start end
+option integer       p      12
+option vect[integer] laglist
+option real          r1     .15
+option real          r2     .85
+option integer       nreps  0
+option switch        robust 0
+option switch        print  1
+option string        title
+*
+local integer 	t1 t2
+local vector  	x
+local vector  	lmstat lmmax lmsum lmsume
+local rect    	xu xut betas
+local symm    	xx xxxx
+local integer 	retime
+local real    	avgp expp supp
+local series  	u xd smpl
+local integer 	startl endl time
+local integer 	lmcount d i
+local real    	ssqmax breakvalue
+local integer 	breakregressor
+local series[vect] 	 ut
+local vector[strings] reglabels
+local series[integer] zr
+*
+local report	hreport
+local string   ltitle
+*
+* Run the regression over the full sample
+*
+if %defined(laglist)
+   linreg(noprint) y start end u
+   # constant y{laglist}
+else
+   linreg(noprint) y start end u
+   # constant y{1 to p}
+*
+* Grab the regressor labels
+*
+compute reglabels=%eqnreglabels(0)
+*
+compute startl=%regstart(),endl=%regend()
+*
+* For the regression y=Xb+Zg+error, the (homoscedastic) LM statistic for
+* testing g=0 can be computed as (u'MZ (Z'MZ)^-1 Z'Mu)/s^2, where u
+* are the OLS residuals and M = I - X (X'X)^-1 X' (the residuals
+* projection operator) and s^2 is the OLS variance estimate. P-values
+* are computed by replacing u/s in the above formula by random normal
+* draws. Because Z is just a subsampling of the X's, this simplifies out
+* quite a bit, since Z'X is just X'X computed across the subsample. If
+* X'X and X'u are full sample cross products and x'x and x'u are for
+* subsamples, then Z'MZ is x'x-x'x((X'X)^-1)x'x and Z'Mu is
+* x'u-x'x((X'X)^-1)(X'u) In the actual sample, Z'Mu simplifies to x'u
+* since ((X'X)^-1)X'u=0; however, that will not be true for the random
+* draws. However, ((X'X)^-1)X'u is independent of the choice of
+* threshold, so we compute it once for each batch of random draws.
+*
+* Create an nreps+1 vector at each time period to hold the standardized u
+* + normal draws.
+*
+gset ut startl endl = %zeros(nreps+1,1)
+*
+* Compute the ((X'X)^-1)X'u for each of those into beta. XUT is going
+* to get computed again below. It would be possible to save a (I
+* suspect) modest amount of time by computing it once here and saving
+* it, but it could be quite a large matrix in practice which might slow
+* things down if it forces the program to start using virtual memory.
+*
+* Note that we use the same set of random draws for each threshold
+* variable tested.
+*
+compute xu=%zeros(%nreg,nreps+1)
+do time=startl,endl
+   ewise ut(time)(i)=%if(i==1,u(time)/sqrt(%seesq),%ran(1.0))
+   compute x=%eqnxvector(0,time)
+   compute xut=%kroneker(x,tr(ut(time)))
+   compute xu=xu+xut
+end do time
+compute betas=%xx*xu
+*
+* Figure out the usable range of points for the thresholds
+*
+compute t1=startl+fix(%round(%nobs*r1,0))
+compute t2=startl+fix(%round(%nobs*r2,0))
+*
+dim lmstat(nreps+1)
+*
+compute ssqmax=0.0
+compute lmsum =%zeros(nreps+1,1)
+compute lmsume=%zeros(nreps+1,1)
+compute lmmax =%zeros(nreps+1,1)
+compute lmcount=0
+*
+*  Loop over regressors (skipping the constant)
+*
+do d=2,%nreg
+   *
+   * Pull out regressor "d", and get an index to its values in
+   * increasing order.
+   *
+   set xd startl endl = %eqnxvector(0,t)(d)
+   order(index=zr) xd startl endl
+   *
+   * xx is the running sum (in threshold variable order) of x'x and xu
+   * is the running sum of x'u for the nreps+1 sets of values of u.
+   *
+   compute xx=%zeros(%nreg,%nreg)
+   compute xu=%zeros(%nreg,nreps+1)
+   do time=startl,endl
+      *
+      * Figure out which time index is next in order
+      *
+      compute retime=zr(time)
+      compute x=%eqnxvector(0,retime)
+      compute xut=%kroneker(x,tr(ut(retime)))
+      compute xu=xu+xut
+      compute xx=xx+%outerxx(x)
+      *
+      * Don't do the LM stat calculation if we're outside the [t1,t2]
+      * range.
+      *
+      if time<t1.or.time>t2
+         next
+      compute xxxx=inv(xx-xx*%xx*xx)
+      ewise lmstat(i)=%qform(xxxx,%xcol(xu,i)-xx*%xcol(betas,i))
+      *
+      * See if this makes the largest break for the actual data
+      *
+      if lmstat(1)>ssqmax
+         compute ssqmax=lmstat(1),breakvalue=xd(retime),breakregressor=d
+      *
+      * Keep track of the maximum, sum and sum of exp(.5xLM) for each
+      * of the nreps+1 sets of u's
+      *
+      ewise lmmax(i)  = %max(lmmax(i),lmstat(i))
+      compute lmsum   = lmsum+lmstat
+      compute lmsume  = lmsume+%exp(.5*lmstat)
+      compute lmcount = lmcount+1
+   end do time
+end do i
+*
+* Get the averages for aveLM and expLM
+*
+compute lmsum=lmsum/lmcount,lmsume=%log(lmsume/lmcount)
+*
+* Figure out the p-values by comparing 2 to nreps+1 to the value in the 1 slot.
+*
+sstats(mean) 2 nreps+1 (lmsum(t)>lmsum(1))>>avgp (lmsume(t)>lmsume(1))>>expp (lmmax(t)>lmmax(1))>>supp
+*
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="Threshold Autoregression"
+report(use=hreport,action=define,title=ltitle)
+report(use=hreport,atrow=1,atcol=1,span) ltitle
+report(use=hreport,atrow=2,atcol=1,span) "Threshold is "+reglabels(breakregressor)+"="+%strval(breakvalue,"*.####")
+report(use=hreport,atrow=3,atcol=1,span) "Tests for Threshold Effect use "+nreps+" draws"
+report(use=hreport,atrow=4,atcol=1) "SupLM" lmmax(1)  "P-value" supp
+report(use=hreport,atrow=5,atcol=1) "ExpLM" lmsume(1) "P-value" expp
+report(use=hreport,atrow=6,atcol=1) "AveLM" lmsum(1)  "P-value" avgp
+*
+report(use=hreport,atrow=8,atcol=1) "Variable" "Full Sample" "<=Thresh" ">Thresh"
+*
+* Show OLS regression
+*
+linreg(noprint,robust=robust,lastreg)
+report(use=hreport,atrow=9,atcol=2,regress)
+report(use=hreport,atrow=9+2*%nreg,atcol=2) %nobs
+report(use=hreport,atrow=10+2*%nreg,atcol=2) %seesq
+*
+* Compute <= thresh subsample
+*
+set smpl startl endl = %eqnxvector(0,t)(breakregressor)<=breakvalue
+linreg(noprint,robust=robust,lastreg,smpl=smpl)
+report(use=hreport,atrow=9,atcol=3,regress)
+report(use=hreport,atrow=9+2*%nreg,atcol=3) %nobs
+report(use=hreport,atrow=10+2*%nreg,atcol=3) %seesq
+*
+* Compute > thresh subsample
+*
+linreg(noprint,robust=robust,lastreg,smpl=.not.smpl)
+report(use=hreport,atrow=9,atcol=4,regress)
+report(use=hreport,atrow=9+2*%nreg,atcol=4) %nobs
+report(use=hreport,atrow=10+2*%nreg,atcol=4) %seesq
+*
+report(use=hreport,atrow=9+2*%nreg,atcol=1,fillby=columns) "Observations" "SEESQ"
+report(use=hreport,action=format,atrow=9,width=10)
+if print
+   report(use=hreport,action=show)
+end
