@@ -26,6 +26,19 @@
 *  06/2005 Written by Tom Doan, Estima
 *  05/2006 Revised to add ROBUST option
 *  08/2010 Add TITLE option, switch to use of local REPORT.
+*  09/2015 Correct problem with range on full sample regression.
+*          (if user overrides range with start end)
+*  04/2017 Define %%breakvalue, %%delay and other standard variables.
+*
+* Variables Defined
+*
+*  %CDSTAT     Maximum test statistic (for the sup statistic)
+*  %SIGNIF     Bootstrapped p-value (for the sup statistic)
+*  %RSS        Sum of squared residuals from regression with optimal break
+*  %LOGL       Log likelihood from regression with optimal break
+*  %NFREE      Total number of estimated parameters including variances and threshold
+*  %%BREAKVALUE Threshold value at the optimal break
+*  %%DELAY     Delay which produces largest test statistic (INTEGER)
 *
 procedure TAR y start end
 option integer       p      12
@@ -47,14 +60,17 @@ local real    	avgp expp supp
 local series  	u xd smpl
 local integer 	startl endl time
 local integer 	lmcount d i
-local real    	ssqmax breakvalue
-local integer 	breakregressor
+local real    	ssqmax ssqtotal
+local integer 	breakregressor nobstotal
 local series[vect] 	 ut
 local vector[strings] reglabels
 local series[integer] zr
 *
-local report	hreport
+local report   hreport
 local string   ltitle
+*
+declare real    %%breakvalue
+declare integer %%delay
 *
 * Run the regression over the full sample
 *
@@ -157,7 +173,7 @@ do d=2,%nreg
       * See if this makes the largest break for the actual data
       *
       if lmstat(1)>ssqmax
-         compute ssqmax=lmstat(1),breakvalue=xd(retime),breakregressor=d
+         compute ssqmax=lmstat(1),%%breakvalue=xd(retime),breakregressor=d
       *
       * Keep track of the maximum, sum and sum of exp(.5xLM) for each
       * of the nreps+1 sets of u's
@@ -169,13 +185,22 @@ do d=2,%nreg
    end do time
 end do i
 *
+* Save the optimum delay
+*
+compute %%delay=%if(%defined(laglist),laglist(breakregressor-1),breakregressor-1)
+*
 * Get the averages for aveLM and expLM
 *
 compute lmsum=lmsum/lmcount,lmsume=%log(lmsume/lmcount)
 *
 * Figure out the p-values by comparing 2 to nreps+1 to the value in the 1 slot.
 *
-sstats(mean) 2 nreps+1 (lmsum(t)>lmsum(1))>>avgp (lmsume(t)>lmsume(1))>>expp (lmmax(t)>lmmax(1))>>supp
+if nreps>=1
+   sstats(mean) 2 nreps+1 (lmsum(t)>lmsum(1))>>avgp (lmsume(t)>lmsume(1))>>expp (lmmax(t)>lmmax(1))>>supp
+else
+   compute avgp=expp=supp=%na
+*
+compute %cdstat=lmmax(1),%signif=supp
 *
 if %defined(title)
    compute ltitle=title
@@ -183,7 +208,7 @@ else
    compute ltitle="Threshold Autoregression"
 report(use=hreport,action=define,title=ltitle)
 report(use=hreport,atrow=1,atcol=1,span) ltitle
-report(use=hreport,atrow=2,atcol=1,span) "Threshold is "+reglabels(breakregressor)+"="+%strval(breakvalue,"*.####")
+report(use=hreport,atrow=2,atcol=1,span) "Threshold is "+reglabels(breakregressor)+"="+%strval(%%breakvalue,"*.####")
 report(use=hreport,atrow=3,atcol=1,span) "Tests for Threshold Effect use "+nreps+" draws"
 report(use=hreport,atrow=4,atcol=1) "SupLM" lmmax(1)  "P-value" supp
 report(use=hreport,atrow=5,atcol=1) "ExpLM" lmsume(1) "P-value" expp
@@ -193,28 +218,34 @@ report(use=hreport,atrow=8,atcol=1) "Variable" "Full Sample" "<=Thresh" ">Thresh
 *
 * Show OLS regression
 *
-linreg(noprint,robust=robust,lastreg)
+linreg(noprint,robust=robust,lastreg) * startl endl
 report(use=hreport,atrow=9,atcol=2,regress)
 report(use=hreport,atrow=9+2*%nreg,atcol=2) %nobs
 report(use=hreport,atrow=10+2*%nreg,atcol=2) %seesq
+compute nobstotal=%nobs
 *
 * Compute <= thresh subsample
 *
-set smpl startl endl = %eqnxvector(0,t)(breakregressor)<=breakvalue
-linreg(noprint,robust=robust,lastreg,smpl=smpl)
+set smpl startl endl = %eqnxvector(0,t)(breakregressor)<=%%breakvalue
+linreg(noprint,robust=robust,lastreg,smpl=smpl) * startl endl
 report(use=hreport,atrow=9,atcol=3,regress)
 report(use=hreport,atrow=9+2*%nreg,atcol=3) %nobs
 report(use=hreport,atrow=10+2*%nreg,atcol=3) %seesq
+compute ssqtotal=%rss
 *
 * Compute > thresh subsample
 *
-linreg(noprint,robust=robust,lastreg,smpl=.not.smpl)
+linreg(noprint,robust=robust,lastreg,smpl=.not.smpl) * startl endl
 report(use=hreport,atrow=9,atcol=4,regress)
 report(use=hreport,atrow=9+2*%nreg,atcol=4) %nobs
 report(use=hreport,atrow=10+2*%nreg,atcol=4) %seesq
+compute ssqtotal+=%rss
 *
 report(use=hreport,atrow=9+2*%nreg,atcol=1,fillby=columns) "Observations" "SEESQ"
 report(use=hreport,action=format,atrow=9,width=10)
 if print
    report(use=hreport,action=show)
+*
+compute %nobs=nobstotal,%rss=ssqtotal,%logl=%logconcdensity(%rss/%nobs,%nobs),%nfree=2*%nreg+2
+*
 end
