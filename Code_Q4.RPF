@@ -25,7 +25,7 @@ set mt        = log(M1SL)
 ************************************************************
 *****CREATE VARIABLES STRINGS****
 ************************************************************
-compute [vector[label]] varlist   = ||"yt","ut","pt","pt_C","rt","nbr_t","tr_t","mt"||
+compute [vector[label]] varlist   = ||"yt","ut","pt","pct","rt","nbrt","trt","mt"||
 compute [vector[label]] varlabels = ||"Production industrielle","Taux de chômage","IPC","Indice des matières premières","Taux des fonds fédéraux","Réserves non empruntées","Réserves totales","Stock d'argent M1"||
 compute [vector[label]] varlabels_4 = ||"Taux de chômage","Production industrielle","IPC","Indice des matières premières","Taux des fonds fédéraux","Réserves non empruntées","Réserves totales","Stock d'argent M1"||
 
@@ -34,71 +34,19 @@ compute nvar = %size(varlist)
 ************************************************************
 *****PLOT VARIABLES*****************************************
 ************************************************************
-GRAPH(STYLE=LINE,HEADER="Variables en log (yt, pt, ptc, nbrt, trt, mt) et taux (ut, rt)",VLABEL="log value",HLABEL="1965:1 - 2007:1",KEY=UPLEFT) 5
-# UT
-# YT
-# RT
-# PCT
-# PT
+spgraph(header="Variables",vfields=3,hfields=2)
+do i = 1,5
+   set vargr = %s(varlist(i))
+   graph(header=(varlabels(i)),nodates) 1
+   # vargr
+end do
+spgraph(done)
 
-*TO SEE: NOT TOO SURE WHAT IS GOING ON HERE
-*graph
-*  type=line
-*  series %s(varlist(1)) %s(varlist(2)) %s(varlist(3)) %s(varlist(4)) %s(varlist(5))
-*  date 1965:1 2007:1
-*  options alltitles title1="Variables en log (yt, pt, pt_C, nbr_t, tr_t, mt) et taux (ut, rt)" title2="1965:1 - 2007:1"
-*  outfile=variables_graph.eps
-*end(graph)
 
 compute  reglist = %rlempty()
 do i=1,nvar
    compute reglist = %rladdone(reglist,%s(varlist(i)))
 end do
-
-
-**I'M HERE
-************************************************************
-*****SELECTING VAR LAG LENGTH*******************************
-************************************************************
-** For the routine @varlagselect, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1261
-** For the routine @mvqstat, read documentation at https://estima.com/forum/viewtopic.php?f=7&t=1316
-
-*1. INFORMATION CRITERIA: AIC
-@VARLagSelect(crit=aic,det=constant,lags=6) begin end
-# yt ut pt pct rt nbrt trt mt
-
-
-*2. INFORMATION CRITERIA: BIC
-@VARLagSelect(crit=bic,det=constant,lags=6) begin end
-# yt ut pt pct rt nbrt trt mt
-
-
-*3. LIKELIHOOD RATIO TEST
-@VARLagSelect(crit=gtos,det=constant,lags=6,signif=0.05) begin end
-# yt ut pt pct rt nbrt trt mt
-
-
-*4. MULTIVARIATE LJUNG-BOX                                                                NOT FIXED
-*compute maxlag = 12
-*do i=1,maxlag
-*  compute lags = 12
-*  system(model=varmodel)
-*  variables reglist
-*  lags 1 to 12
-*  det constant
-*  end(system)
-*  estimate
-
-*  display 'Var with LAGS = ' i
-*  @mvqstat(lags=12)
-*  # res(1) res(2) res(3) res(4)
-*  display '  '
-  *display 'test statistic                                       =' %CDSTAT
-  *DISPLAY 'significance level treating statistic as chi-squared =' %SIGNIF
-  *display 'degrees of freedom of the chi-squared                =' %NDFQ
-*end do
-************************************************************
-
 
 ************************************************************
 *****ESTIMATE VAR and IDENTIFY with RECURSIVE ORDERING*****
@@ -122,7 +70,7 @@ compute mat_u = %diag(%XDIAG(chol_decomp))
 compute mat_u_inv = inv(mat_u)
 compute A_inv = tr(mat_u_inv * chol_decomp)
 compute A = inv(A_inv)
-
+medit A
 ************************************************************
 *****4.3B***************************************************
 ************************************************************
