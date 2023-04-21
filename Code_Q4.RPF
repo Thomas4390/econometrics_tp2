@@ -26,8 +26,8 @@ set mt        = log(M1SL)
 *****CREATE VARIABLES STRINGS****
 ************************************************************
 compute [vector[label]] varlist   = ||"yt","ut","pt","pct","rt","nbrt","trt","mt"||
-compute [vector[label]] varlabels = ||"Production industrielle","Taux de chômage","IPC","Indice des matières premières","Taux des fonds fédéraux","Réserves non empruntées","Réserves totales","Stock d'argent M1"||
-compute [vector[label]] varlabels_4 = ||"Taux de chômage","Production industrielle","IPC","Indice des matières premières","Taux des fonds fédéraux","Réserves non empruntées","Réserves totales","Stock d'argent M1"||
+compute [vector[label]] varlabels = ||"Production industrielle","Taux de chï¿½mage","IPC","Indice des matiï¿½res premiï¿½res","Taux des fonds fï¿½dï¿½raux","Rï¿½serves non empruntï¿½es","Rï¿½serves totales","Stock d'argent M1"||
+compute [vector[label]] varlabels_4 = ||"Taux de chï¿½mage","Production industrielle","IPC","Indice des matiï¿½res premiï¿½res","Taux des fonds fï¿½dï¿½raux","Rï¿½serves non empruntï¿½es","Rï¿½serves totales","Stock d'argent M1"||
 
 compute nvar = %size(varlist)
 
@@ -113,11 +113,11 @@ estimate(outsigma=sigmat_4,residuals=resids_chol) begin end
 declare rectangular chol_decomp
 declare rectangular mat_u
 
-compute chol_decomp = tr(%DECOMP(sigmat_4))
-compute mat_u = %diag(%XDIAG(chol_decomp))
-compute mat_u_inv = inv(mat_u)
-compute A_inv = tr(mat_u_inv * chol_decomp)
-compute A = inv(A_inv)
+compute chol_decomp2 = tr(%DECOMP(sigmat_4))
+compute mat_u2 = %diag(%XDIAG(chol_decomp2))
+compute mat_u_inv2 = inv(mat_u2)
+compute A_inv2 = tr(mat_u_inv2 * chol_decomp2)
+compute A2 = inv(A_inv2)
 
 ************************************************************
 *****4.3B***************************************************
