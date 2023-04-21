@@ -142,3 +142,4 @@ dis results_2
 compute p = 12
 
 BOXJENK(CONST,AR=12) UNRATE 1954:01 2019:04
+@REGCRITS
