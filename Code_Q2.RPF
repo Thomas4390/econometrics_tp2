@@ -74,7 +74,7 @@ display varlist
 *****GRANGER-CAUSALITY TEST*********************************
 ************************************************************
 * Granger causality test: dlog_Gt causing dlog_Yt
-compute lags = 1
+compute lags = 4
 linreg dlog_Yt
 # constant dlog_Yt{1 to lags} dlog_It{1 to lags} dlog_Ct{1 to lags} dlog_Gt{1 to lags}
 exclude(title="Granger Causality Test")
