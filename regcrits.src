@@ -1,0 +1,72 @@
+*
+* @regCrits( options )
+*
+* RegCrits is a post-processor for a linear regression which computes and
+* (optionally) displays various information criteria. It has no
+* parameters, as it just picks the information off from the accessible
+* variables.
+*
+* This should be used immediately after an estimation instruction.
+*
+* It computes the Akaike Information Criterion, Schwarz Bayesian
+* Criterion, Hannan-Quinn, and FPE. These are all done in log form, so
+* their values will look fairly similar. Of course, the key to their use
+* is the comparison across models of a particular criterion.
+*
+* Formulas are
+*   AIC  -2*logL/T+2*k/T
+*   SBC  -2*logL/T+log(T)*k/T
+*   HQ   -2*logL/T+2*log(log(T))*k/T
+*   FPE  -2*logL/T+log(T+k/T-k) (log of the standard formula)
+*
+* where logL is the log likelihood, k is the number of regressors and T
+* is the number of observations.
+*
+* Options:
+*   T=T value in the formula [%NOBS]
+*   K=K value in the formula [%NFREE]
+*   [PRINT]/NOPRINT
+*   TITLE=report title ["Information Criteria"]
+*
+* Variables Defined:
+*   %AIC 	Akaike
+*   %SBC 	Schwarz
+*   %HQCRIT Hannan-Quinn
+*   %LOGFPE log of the FPE
+*
+* Revision Schedule:
+*   02/2003 Written by Tom Doan. Estima.
+*   06/2005 Revised to use %LOGL rather than sum of squared residuals
+*   09/2010 Add TITLE option, switch to using REPORT
+*   04/2017 Update to add K and T option and make %NFREE the default
+*
+procedure RegCrits
+option switch  print    1
+option string  title
+option integer t        %nobs
+option integer k        %nfree
+*
+local report creport
+local string ltitle
+*
+declare real %aic %sbc %hqcrit %logfpe
+compute %aic    = -2.0*%logl/t+2.0*k/t
+compute %sbc    = -2.0*%logl/t+log(t)*k/t
+compute %hqcrit = -2.0*%logl/t+2.0*log(log(t))*k/t
+compute %logfpe = %if(k<t,-2.0*%logl/t+log(float(t+k)/(t-k)),%na)
+*
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="Information Criteria"
+
+report(use=creport,action=define,title=ltitle)
+report(use=creport,atrow=1,atcol=1,span) ltitle
+report(use=creport,atrow=2,atcol=1) "AIC" 			%aic
+report(use=creport,atrow=3,atcol=1) "SBC" 			%sbc
+report(use=creport,atrow=4,atcol=1) "Hannan-Quinn" %hqcrit
+report(use=creport,atrow=5,atcol=1) "(log) FPE" 	%logfpe
+report(use=creport,action=format,picture="*.###")
+if print
+   report(use=creport,action=show)
+end
