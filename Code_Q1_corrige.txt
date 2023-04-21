@@ -1,0 +1,162 @@
+********************
+*****LOAD DATA******
+********************
+cal(q) 1948:1
+open data H2q1.xls
+data(format=excel,org=obs) 1948:1 2020:3
+
+compute begin   = 1954:1
+compute end     = 2019:4
+
+***********************************************************
+*****create new variables****
+***********************************************************
+
+set ut = UNRATE
+table
+
+***********************************************************
+*****PLOT**************************************************
+***********************************************************
+GRAPH(HEADER='Unemployment',KEY=UPLEFT) 1
+# ut begin end
+
+
+***********************************************************
+*Choose range for autoregressive lag (p) and state variable (d)
+compute pmax        = 12
+
+*When using Information criteria, must use the same sample range for all models considered
+compute begin_pmax   = begin + pmax
+***********************************************************
+
+
+***********************************************************
+*Create labels (be consistent with pmax)
+compute base    = "dum"
+compute base_om = "om_dum"
+declare vector[labels] vl(pmax)
+input vl
+"_Y1" "_Y2" "_Y3" "_Y4" "_Y5" "_Y6" "_Y7" "_Y8" "_Y9" "_Y10" "_Y11" "_Y12"
+***********************************************************
+
+
+****************************************************************
+*****SETAR MODEL WITH KNOWN THRESHOLD C AND DELAY D USING @TAR
+****************************************************************
+* documentation: https://estima.com/forum/viewtopic.php?f=7&t=2010
+* NOTE1: @TAR DOES NOT COMPUTE OPTIMAL P (I CODE THIS PART)
+* NOTE2: @TAR DOES NOT ALLOW P1 AND P2 TO DIFFER
+* NOTE3: @TAR USES QUANTILES TO DETERMINE R1=15% AND R2=85%
+* WHAT THE CODE DOES:
+   *1. FOR EACH p, USE @TAR TO FIND OPTIMAL c and d
+   *2. FOR EACH p, COMPUTE AIC USING OPTIMAL c and d
+   *3. CHOOSE p WITH THE SMALLEST AIC
+*@tar(p=6,R1=0.15,R2=0.85,noprint) ut begin end
+
+
+compute c = 6
+compute d = 1
+
+declare rectangular results(pmax,4)
+
+do s=1,pmax
+
+   compute results(s,1)   = s
+
+   compute   reglist_dummy = %rlempty()
+   compute   reglist_om_dummy = %rlempty()
+
+   do j=1,s
+      compute reglist_dummy = %rladdone(reglist_dummy,%s(base+vl(j)))
+      compute reglist_om_dummy = %rladdone(reglist_om_dummy,%s(base_om+vl(j)))
+   end do j
+
+   @tar(p=s,R1=0.15,R2=0.85,noprint) ut begin_pmax end
+
+   compute results(s,4)   = d
+   compute results(s,3)   = c
+
+
+   set dum         = ut{d} > c
+   set om_dum      = 1-dum
+
+   do j=1,s
+      set %s(base+vl(j))       = dum*ut{j}
+      set %s(base_om+vl(j))    = om_dum*ut{j}
+   end do j
+
+   linreg(noprint) ut begin_pmax end
+   # dum om_dum reglist_dummy reglist_om_dummy
+   @REGCRITS(noprint)
+   compute results(s,2)   = %AIC
+ end do s
+
+dis 'COLUMN LABELS: p  // AIC // optimal c // d'
+dis results
+
+
+****************************************************************
+*****SETAR MODEL WITH UNKNOWN THRESHOLD C AND DELAY D USING @TAR
+****************************************************************
+* documentation: https://estima.com/forum/viewtopic.php?f=7&t=2010
+* NOTE1: @TAR DOES NOT COMPUTE OPTIMAL P (I CODE THIS PART)
+* NOTE2: @TAR DOES NOT ALLOW P1 AND P2 TO DIFFER
+* NOTE3: @TAR USES QUANTILES TO DETERMINE R1=15% AND R2=85%
+* NOTE4: @TAR IMPOSES THE RESTRICTION D<=P
+* WHAT THE CODE DOES:
+   *1. FOR EACH p, USE @TAR TO FIND OPTIMAL c and d
+   *2. FOR EACH p, COMPUTE AIC USING OPTIMAL c and d
+   *3. CHOOSE p WITH THE SMALLEST AIC
+*@tar(p=12,R1=0.15,R2=0.85,noprint) ut begin end
+
+
+declare real    %%breakvalue
+declare integer %%delay
+
+declare rectangular results_2(pmax,4)
+
+do s=1,pmax
+
+   compute results_2(s,1)   = s
+
+   compute   reglist_dummy = %rlempty()
+   compute   reglist_om_dummy = %rlempty()
+
+   do j=1,s
+      compute reglist_dummy = %rladdone(reglist_dummy,%s(base+vl(j)))
+      compute reglist_om_dummy = %rladdone(reglist_om_dummy,%s(base_om+vl(j)))
+   end do j
+
+   @tar(p=s,R1=0.15,R2=0.85,noprint) ut begin_pmax end
+
+   compute results_2(s,4)   = %%delay
+   compute results_2(s,3)   = %%breakvalue
+
+
+   set dum         = ut{%%delay} > %%breakvalue
+   set om_dum      = 1-dum
+
+   do j=1,s
+      set %s(base+vl(j))       = dum*ut{j}
+      set %s(base_om+vl(j))    = om_dum*ut{j}
+   end do j
+
+   linreg(noprint) ut begin_pmax end
+   # dum om_dum reglist_dummy reglist_om_dummy
+   @REGCRITS(noprint)
+   compute results_2(s,2)   = %AIC
+ end do s
+
+dis 'COLUMN LABELS: p  // AIC // optimal c // d'
+dis results_2
+
+
+
+****************************************************************
+*****AR(p) model
+****************************************************************
+
+compute p = 12
+
+BOXJENK(CONST,AR=12) UNRATE 1954:01 2019:04
