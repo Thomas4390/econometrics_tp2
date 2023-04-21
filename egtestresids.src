@@ -1,0 +1,230 @@
+*
+* @EGTESTRESIDS( options ) resids  start  end
+* Computes an Engle-Granger test for cointegration using the residuals
+* from a previous first-stage regression, producing MacKinnon critical
+* values. Use @EGTEST to do the first stage regression as well.
+*
+*  Options:
+*   DET=NONE/[CONSTANT]/TREND
+*     Indicates which deterministic components were included in the
+*     first stage regression.
+*   NVAR=number of endogenous variables in the cointegrating regression,
+*     counting the dependent variable [2]
+*
+*   LAGS=number of additional lags [0]
+*     LAGS indicates the degree of AR polynomial on the differences
+*     to include in the unit root test on the residuals.
+*   MAXLAGS=maximum number of additional lags to consider [number of observations**.25]
+*
+*   METHOD=[INPUT]/AIC/BIC/HQ/TTEST/GTOS
+*     Selects the method for deciding the number of additional lags. If
+*     INPUT, the number of lags given by the MAXLAGS option is used. If AIC,
+*     the AIC-minimizing value between 0 and MAXLAGS is used; if BIC, it's
+*     the BIC-minimizing value, and if TTEST or GTOS, the number of lags for
+*     which the last included lag has a marginal significance level less than the
+*     cutoff given by the SIGNIF option.
+*   SIGNIF=cutoff significance level for METHOD=TTEST or GTOS[.10]
+*
+*   [PRINT]/NOPRINT
+*     NOPRINT suppresses the output
+*   TITLE=title for output ["Engle-Granger Test"]
+*
+*   TREND/NOTREND
+*     Indicates whether a trend was included in the first stage regression.
+*     (Older option---use DET instead)
+*
+*   Defines:
+*    %NOBS   = number of regression observations + 1 (tables are based upon this)
+*    %CDSTAT = test statistic
+*    %NVAR   = number of variables
+*    %%AUTOP = number of lags used
+*
+*  The (approximate) critical values for t-test are from
+*    MacKinnon, "Critical Values for Cointegration Tests", Long-Run
+*      Economic Relationships, R.F. Engle and C.W.J. Granger, eds,
+*       London, Oxford, 1991, pp 267-276
+*
+*  Revision Schedule:
+*    07/2005 Written by Tom Doan, Estima.
+*    05/2007 Added TITLE option
+*    06/2007 Added DET option
+*    05/2010 Switch to use of REPORT rather than DISPLAY
+*    10/2011 Add lag selection options
+*    06/2012 Add CLEAR UC DU to avoid problems when running over
+*            series with different ranges.
+*    07/2012 Add description of deterministics and lag method to
+*            the table.
+*
+* Include the MacKinnon CV procedure
+*
+source mackinnoncv.src
+*
+procedure egtestresids u start end
+type series u
+type integer start end
+*
+option choice  det       2  none constant trend
+option integer lags
+option switch  print     1
+option integer nvar      2
+option integer maxlags
+option choice  method    1 input aic bic hq ttest gtos
+option real    signif    .10
+option string  title
+option switch  trend
+option series  smpl
+*
+local series  uc du
+local integer startl endl
+local vect    cv
+local report  egreport
+local string  ltitle ldet lmethod
+local integer table maxlag znobs bestlag lag tag
+local real    ic icmin icmult
+*
+inquire(series=u) startl<<start endl<<end
+*
+* Make a local copy of the series (in case the user input %resids, which
+* will get overwritten).
+*
+clear uc du
+*
+set uc startl endl   = u
+set du startl+1 endl = uc-uc{1}
+*
+compute znobs=endl-startl+1
+if %defined(lags)
+   compute maxlag=lags
+else
+if %defined(maxlags)
+   compute maxlag=maxlags
+else
+if method==1
+   compute maxlag=0
+else
+   compute maxlag=fix(znobs^.25)
+
+if method==1
+   compute bestlag=maxlag
+else {
+   cmom(smpl=smpl)
+   # uc{1} du{0 to maxlag}
+   if method==2
+      compute icmult=2.0/%nobs
+   else
+   if method==3
+      compute icmult=log(%nobs)/%nobs
+   else
+      compute icmult=2.0*log(log(%nobs))/%nobs
+   *
+   * Do the zero lag statistic and initialize the search procedure with
+   * <<bestlag>>=0.
+   *
+   linreg(cmom,noprint) du
+   # uc{1}
+   compute ic=log(%rss/%nobs)+icmult*%nreg
+   compute icmin=ic,bestlag=0
+   *
+   * Walk backwards through the lags. The direction doesn't matter for
+   * the IC calculations, but does for GTOS.
+   *
+   do lag=maxlag,1,-1
+      linreg(cmom,noprint) du
+      # uc{1} du{1 to lag}
+      if method==5.or.method==6 {
+         if %ttest(%tstats(%nreg),%ndf)<=signif {
+            compute bestlag=lag
+            break
+         }
+      }
+      else {
+         compute ic=log(%rss/%nobs)+icmult*%nreg
+         if ic<icmin
+            compute icmin=ic,bestlag=lag
+      }
+   end do lag
+}
+*
+* Redo the regression with the optimal lag length
+*
+if bestlag==0 {
+   linreg(noprint,smpl=smpl) du
+   # uc{1}
+}
+else {
+   linreg(noprint,smpl=smpl) du
+   # uc{1} du{1 to bestlag}
+}
+compute %nobs=%nobs+1
+*
+* The (deprecated) TREND option overrides the value of DET if it is used.
+*
+if %defined(trend).and.trend==1
+   compute table=2+trend
+else
+   compute table=det
+*
+if table==1
+   compute ldet="No deterministic variables in cointegrating vector"
+else
+if table==2
+   compute ldet="Constant in cointegrating vector"
+else
+   compute ldet="Constant and linear trend in cointegrating vector"
+*
+* Handle description of lag choice
+*
+compute %%autop=bestlag
+if method==2
+   compute lmethod="AIC"
+else
+if method==3
+   compute lmethod="BIC/SBC"
+else
+if method==4
+   compute lmethod="Hannan-Quinn"
+else
+   compute lmethod="GTOS/t-tests("+%strval(signif,"#.###")+")"
+
+if method==1
+   compute lmethod="Using fixed lags "+bestlag
+else
+   compute lmethod="With "+bestlag+" lags chosen from "+maxlag+" by "+lmethod
+*
+* Compute critical values
+*
+@mackinnoncv(nvar=nvar,determ=table) cv
+compute %cdstat=%tstats(1)
+compute %nvar  =nvar
+*
+* Handle the report title
+*
+if %defined(title)
+   compute ltitle=title
+else
+   compute ltitle="Engle-Granger Cointegration Test"
+*
+* Build report
+*
+report(use=egreport,action=define,title=ltitle)
+report(use=egreport,atrow=1,atcol=1,span) ltitle
+report(use=egreport,atrow=2,atcol=1,span) "Null is no cointegration (residual has unit root)"
+report(use=egreport,atrow=3,atcol=1,span) "Regression Run From "+%datelabel(%regstart())+" to "+%datelabel(%regend())
+report(use=egreport,atrow=4,atcol=1) "Observations" %nobs
+report(use=egreport,atrow=5,atcol=1,span) lmethod
+report(use=egreport,atrow=6,atcol=1,span) ldet
+*
+* Figure out the tagging
+*
+compute tag=fix(1+(%cdstat<cv(1))+(%cdstat<cv(2)))
+report(use=egreport,atrow=7,atcol=1,span) "Critical Values from MacKinnon for "+nvar+" Variables"
+report(use=egreport,atrow=9,atcol=1) "Test Statistic" %cdstat
+report(use=egreport,atrow=9,atcol=2,action=format,special=tag)
+report(use=egreport,atrow=10,atcol=1) "1%(**)" cv(1)
+report(use=egreport,atrow=11,atcol=1) "5%(*)" cv(2)
+report(use=egreport,atrow=12,atcol=1) "10%" cv(3)
+report(use=egreport,atrow=9,atcol=2,action=format,width=8,align=decimal)
+if print
+   report(use=egreport,action=show)
+end
+

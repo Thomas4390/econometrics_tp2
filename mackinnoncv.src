@@ -1,0 +1,156 @@
+*
+* @MacKinnonCV(options)  critval
+*
+* Computes "exact" critical values for the Dickey-Fuller and the
+* Engle-Granger cointegration tests from the response surface
+* regressions in MacKinnon (1991). They are returned in the 3-vector
+* critval, which will have 1%, 5% and 10% critical values in that order.
+*
+* Parameters:
+*   critval=[return] vector with 3 entries for the computed critical
+*     values at the 1%, 5% and 10% level (in this order). This doesn't have
+*     to be declared or dimensioned.
+*
+* Options:
+*   npts=number of observations [%NOBS]
+*   nvar=number of variables in the cointegrating relationship
+*   determ=noconst/[const]/trend
+*     Deterministic parts in the regression
+*
+* The critical values are approximated by quadratics in 1/number of
+* observations. Each 3x3 array in the set of tables gives (in the rows)
+* the coefficients for the .01, .05 and .10 critical values. The main
+* coeffs array is 6x2, where the "row" is the number of endogenous
+* variables and the "column" is the choice between having a constant or
+* a constant and trend.
+*
+* Reference:
+*  MacKinnon, J. (1991). "Critical Values for Cointegration Tests", Long-Run
+*  Economic Relationships, R.F. Engle and C.W.J. Granger, eds. London: Oxford
+*  University Press
+*
+* Revision Schedule:
+*   08/2000 Written by Stephan Kohns
+*   12/2003 Updated for version 6 by Tom Doan, Estima
+*   04/2008 NOCONST branch and syntax checks added by Tom Doan, Estima.
+*   07/2008 NOCONST branch improved to provide asymptotic values.
+*
+procedure MacKinnonCV critval
+type vector *critval
+option integer npts
+option integer nvar   1
+option choice  determ 2  noconst const trend
+*
+* The FIXED arrays are a set of 3 x 3 arrays. Each of these has the
+* coefficients on 1, 1/N and 1/N^2 in the columns. The first row is for
+* the 1% critical value, the second for the 5% and the third for the 10%.
+*
+* The DETERM=NOCONST applies only to the NVAR=1 (simple Dickey-Fuller
+* test). The coefficients for that are in the DFBASE array
+*
+fixed rect dfbase(3,3)
+ -2.5658   -1.9600  -10.0400
+ -1.9393   -0.3980    0.0000
+ -1.6156   -0.1810    0.0000
+fixed rect nccase(6,3)
+  0.00  0.00  0.00
+ -3.39 -2.76 -2.45
+ -3.84 -3.27 -2.99
+ -4.30 -3.74 -3.44
+ -4.67 -4.13 -3.81
+ -4.99 -4.40 -4.14
+*
+* This is a 6x2 array of coefficient arrays. coeffs(i,j) is the array of
+* coefficients for NVAR=i, with j=1 being for the CONSTANT, and j=2 for
+* CONSTANT and TREND.
+*
+fixed rect[rect] coeffs(6,2)(3,3)
+
+ -3.4335   -5.9990  -29.2500
+ -2.8621   -2.7380   -8.3600
+ -2.5671   -1.4380   -4.4800
+
+ -3.9638   -8.3530  -47.4400
+ -3.4126   -4.0390  -17.8300
+ -3.1279   -2.4180   -7.5800
+
+ -3.9001  -10.5340  -30.0300
+ -3.3377   -5.9670   -8.9800
+ -3.0462   -4.0690   -5.7300
+
+ -4.3266  -15.5310  -34.0300
+ -3.7809   -9.4210  -15.0600
+ -3.4959   -7.2030   -4.0100
+
+ -4.2981  -13.7900  -46.3700
+ -3.7429   -8.3520  -13.4100
+ -3.4518   -6.2410   -2.7900
+
+ -4.6676  -18.4920  -49.3500
+ -4.1193  -12.0240  -13.1300
+ -3.8344   -9.1880   -4.8500
+
+ -4.6493  -17.1880  -59.2000
+ -4.1000  -10.7450  -21.5700
+ -3.8110   -8.3170   -5.1900
+
+ -4.9695  -22.5040  -50.2200
+ -4.4294  -14.5010  -19.5400
+ -4.1474  -11.1650   -9.8800
+
+ -4.9587  -22.1400  -37.2900
+ -4.4185  -13.6410  -21.1600
+ -4.1327  -10.6380   -5.4800
+
+ -5.2497  -26.6060  -49.5600
+ -4.7154  -17.4320  -16.5000
+ -4.4345  -13.6540   -5.7700
+
+ -5.2400  -26.2780  -41.6500
+ -4.7048  -17.1200  -11.1700
+ -4.4242  -13.3470    0.0000
+
+ -5.5127  -30.7350  -52.5000
+ -4.9767  -20.8830   -9.0500
+ -4.6999  -16.4450    0.0000
+
+local rect    pick
+local integer i nobsv
+
+if nvar<1.or.nvar>6 {
+   display "***@MacKinnonCV Error. NVAR must be >=1 and <=6"
+   return
+}
+
+if .not.%defined(npts)
+   compute nobsv=%nobs
+else
+   compute nobsv=npts
+
+if nobsv<=0 {
+   display "***@MacKinnonCV Error. NPTS option needed if no instruction has set %NOBS"
+   return
+}
+*
+* MacKinnon doesn't include the case of NOCONST with NVAR>1, so we use
+* the asymptotic values.
+*
+if determ==1.and.nvar>1 {
+   compute critval=%xrow(nccase,nvar)
+   return
+}
+
+if .not.%defined(critval) {
+   display "***Syntax Error: @MacKinnonCV(options) CRITVAL<<<<<missing"
+   return
+}
+
+if determ==1.and.nvar==1
+   compute pick=dfbase
+else
+   compute pick=coeffs(nvar,determ-1)
+dim critval(3)
+ewise critval(i) = pick(i,1)+pick(i,2)/nobsv+pick(i,3)/(nobsv^2)
+end MacKinnonCV
+
+
