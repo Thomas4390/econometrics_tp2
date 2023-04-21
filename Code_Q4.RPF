@@ -118,6 +118,7 @@ compute mat_u2 = %diag(%XDIAG(chol_decomp2))
 compute mat_u_inv2 = inv(mat_u2)
 compute A_inv2 = tr(mat_u_inv2 * chol_decomp2)
 compute A2 = inv(A_inv2)
+medit A2
 
 ************************************************************
 *****4.3B***************************************************
