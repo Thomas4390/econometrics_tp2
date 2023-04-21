@@ -114,11 +114,11 @@ dis results
 declare real    %%breakvalue
 declare integer %%delay
 
-declare rectangular results(pmax,4)
+declare rectangular results_2(pmax,4)
 
 do s=1,pmax
 
-   compute results(s,1)   = s
+   compute results_2(s,1)   = s
 
    compute   reglist_dummy = %rlempty()
    compute   reglist_om_dummy = %rlempty()
@@ -128,10 +128,10 @@ do s=1,pmax
       compute reglist_om_dummy = %rladdone(reglist_om_dummy,%s(base_om+vl(j)))
    end do j
 
-   @tar(p=s,R1=0.15,R2=0.85) ut begin_pmax end
+   @tar(p=s,R1=0.15,R2=0.85,noprint) ut begin_pmax end
 
-   compute results(s,4)   = %%delay
-   compute results(s,3)   = %%breakvalue
+   compute results_2(s,4)   = %%delay
+   compute results_2(s,3)   = %%breakvalue
 
 
    set dum         = ut{%%delay} > %%breakvalue
@@ -145,11 +145,11 @@ do s=1,pmax
    linreg(noprint) ut begin_pmax end
    # dum om_dum reglist_dummy reglist_om_dummy
    @REGCRITS(noprint)
-   compute results(s,2)   = %AIC
+   compute results_2(s,2)   = %AIC
  end do s
 
 dis 'COLUMN LABELS: p  // AIC // optimal c // d'
-dis results
+dis results_2
 
 
 
