@@ -110,8 +110,8 @@ estimate(outsigma=sigmat_4,residuals=resids_chol) begin end
 ************************************************************
 *****ESTIMATE MATRIX A FROM CHOL DECOMPOSITION**************
 ************************************************************
-declare rectangular chol_decomp2
-declare rectangular mat_u2
+declare rectangular chol_decomp
+declare rectangular mat_u
 
 compute chol_decomp2 = tr(%DECOMP(sigmat_4))
 compute mat_u2 = %diag(%XDIAG(chol_decomp2))
@@ -124,9 +124,9 @@ medit A2
 *****4.3B***************************************************
 ************************************************************
 *Error vector
-declare rectangular chol_imp2
+declare rectangular chol_imp
 compute ut_impulse_vec = %unitv(8,5)*sigmat_4(5,5)
-compute chol_imp = tr(%diag(ut_impulse_vec) * tr(A_inv))
+compute chol_imp = tr(%diag(ut_impulse_vec) * tr(A_inv2))
 
 IMPULSE(MODEL=VARMODEL_4,STEPS=20,FACTOR=chol_imp,RESULT=IMPULSE_20_4, noprint)
 
