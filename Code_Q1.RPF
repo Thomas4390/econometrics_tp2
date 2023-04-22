@@ -79,8 +79,8 @@ do s=1,pmax
 
    linreg(noprint) ut begin_pmax end
    # dum om_dum reglist_dummy reglist_om_dummy
-   @REGCRITS(noprint)
-   compute results(s,2)   = %AIC
+   compute aic = log(%rss/%nobs)+%nreg*2.0/%nobs
+   compute results(s,2)   = aic
  end do s
 
 dis 'COLUMN LABELS: p  // AIC // optimal c // d'
@@ -126,12 +126,12 @@ do s=1,pmax
 
    linreg(noprint) ut begin_pmax end
    # dum om_dum reglist_dummy reglist_om_dummy
-   @REGCRITS(noprint)
-   compute results_2(s,2)   = %AIC
+   compute aic = log(%rss/%nobs)+%nreg*2.0/%nobs
+   compute results_2(s,2)   = aic
  end do s
 
-dis 'COLUMN LABELS: p  // AIC // optimal c // d'
-dis results_2
+display 'COLUMN LABELS: p  // AIC // optimal c // d'
+display results_2
 
 
 
@@ -141,5 +141,8 @@ dis results_2
 
 compute p = 12
 
-BOXJENK(CONST,AR=12) UNRATE 1954:01 2019:04
-@REGCRITS
+BOXJENK(CONST,AR=12) ut 1954:01 2019:04
+compute aic = log(%rss/%nobs)+%nreg*2.0/%nobs
+display 'CRITERIA: AIC'
+display aic
+
