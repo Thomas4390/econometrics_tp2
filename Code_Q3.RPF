@@ -60,7 +60,8 @@ display 'ADF unit root tests: dpt_C, constant and trend, lags chosen by BIC: t-s
 display 'ADF unit root tests: dpt_US, constant and trend, lags chosen by BIC: t-statistic'
 @dfunit(print,maxlags=6,method=bic,det=trend) dpt_US begin end
 
-*****CREATE PPPt VARIABLE******
+********************************
+*****CREATE PPPt VARIABLE*******
 ********************************
 set PPPt = pt_US - epsilon_t - pt_C
 
@@ -68,24 +69,18 @@ set PPPt = pt_US - epsilon_t - pt_C
 display 'ADF unit root tests: PPPt, constant and trend, lags chosen by BIC: t-statistic'
 @dfunit(print,maxlags=6,method=bic,det=trend) PPPt begin end
 
-
+*************************************************************************
 *****TEST FOR COINTEGRATION AND ESTIMATE VECM USING ENGEL AND GRANGER****
 *************************************************************************
-**ENGEL GRANGER TEST:
-@EGTEST(det=constant,method=aic,maxlags = 4) begin end
-# pt_US epsilon_t pt_C
 
-**ENGEL GRANGER TEST, INVERTING ORDER OF VARIABLES
-@EGTEST(det=constant,method=aic,maxlags = 4) begin end
-# pt_C epsilon_t pt_US
+LINREG(DEFINE=EQ_EG) EPSILON_T 1985:01 2019:12 E_XI
+# Constant PT_US PT_C
 
-* Estimation de la régression
-linreg epsilon_t begin end e_xi
-# pt_US pt_C
 
 * Test de cointégration d'Engle-Granger
-@EGTEST(det=constant,method=aic,maxlags = 4) begin end
-# pt_US epsilon_t pt_C
+@EGTESTRESIDS(det=constant,nvar = 3, method=aic) e_xi begin end
+
+
 
 ************************************************************
 *****SELECT NUMBER OF LAGS USING VAR IN LEVELS**************
@@ -93,18 +88,11 @@ linreg epsilon_t begin end e_xi
 @varlagselect(lags=6,crit=aic)
 # epsilon_t pt_US pt_C
 
-@varlagselect(lags=6,crit=bic)
-# epsilon_t pt_US pt_C
-
-* Supposons que p* = 4 (remplacez 4 par la valeur déterminée par le critère AIC ou BIC)
+* p* = 4, car vecm soustrait 1 a p optimal
 
 * Estimer la relation de cointégration (supposons que le modèle ait une constante et un vecteur de cointégration)
 @JOHMLE(lags=3, det=rc, cv=beta)
 # epsilon_t pt_US pt_C
-
-* Normaliser le vecteur de cointégration si nécessaire
-*compute beta_norm = beta/beta(1)
-*display beta_norm
 
 * Configurer l'équation pour le vecteur de cointégration
 equation(coeffs=beta) cv *
